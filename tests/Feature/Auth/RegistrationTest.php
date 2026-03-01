@@ -1,0 +1,45 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\Auth;
+
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
+use Tests\TestCase;
+
+class RegistrationTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Role::findOrCreate('user', 'web');
+    }
+
+    public function test_registration_screen_can_be_rendered(): void
+    {
+        $response = $this->get(route('register'));
+
+        $response->assertOk();
+    }
+
+    public function test_new_users_can_register(): void
+    {
+        $response = $this->withoutMiddleware(ValidateCsrfToken::class)
+            ->post(route('register.store'), [
+                'name' => 'John Doe',
+                'email' => 'test@example.com',
+                'password' => 'password',
+                'password_confirmation' => 'password',
+            ]);
+
+        $response->assertSessionHasNoErrors()
+            ->assertRedirect(route('dashboard', absolute: false));
+
+        $this->assertAuthenticated();
+    }
+}
