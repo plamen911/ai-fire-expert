@@ -146,6 +146,9 @@
     "Date": "Дата",
     "Open": "Отвори",
     "No conversations in history.": "Няма разговори в историята.",
+    "Delete conversation": "Изтриване на разговор",
+    "Are you sure you want to delete :title? This action cannot be undone.": "Сигурни ли сте, че искате да изтриете :title? Това действие не може да бъде отменено.",
+    "Conversation deleted successfully.": "Разговорът е изтрит успешно.",
 
     "Upload document": "Качи документ",
     "Files (.docx, max :max)": "Файлове (.docx, макс. :max)",

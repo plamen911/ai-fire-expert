@@ -74,8 +74,6 @@ class extends Component {
             'content' => $userMessage,
         ];
 
-        $isNewConversation = $this->conversationId === null;
-
         $this->isStreaming = true;
 
         $agent = ForensicFireExpert::make();
@@ -151,8 +149,11 @@ class extends Component {
             }
         }
 
-        if ($isNewConversation && $this->conversationId) {
-            AgentConversation::find($this->conversationId)?->generateTitle($userMessage, $fullText);
+        if ($this->conversationId) {
+            $conversation = AgentConversation::find($this->conversationId);
+            if ($conversation?->needsTitleGeneration()) {
+                $conversation->generateTitle($userMessage, $fullText);
+            }
         }
 
     }

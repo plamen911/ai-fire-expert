@@ -39,6 +39,12 @@ class AgentConversation extends Model
         return $this->belongsTo(User::class);
     }
 
+    public function needsTitleGeneration(): bool
+    {
+        return $this->title === ''
+            || ! str_contains($this->title, '_');
+    }
+
     /**
      * Generate and persist an auto-title from the first user/assistant exchange.
      */

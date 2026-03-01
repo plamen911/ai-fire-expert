@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Models\AgentConversation;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class AgentConversationTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_all_unknown_title_is_rejected(): void
     {
         $rejectedTitles = [
@@ -38,5 +43,41 @@ class AgentConversationTest extends TestCase
                 "Expected acceptance for: {$title}"
             );
         }
+    }
+
+    public function test_needs_title_generation_returns_true_for_empty_title(): void
+    {
+        $conversation = AgentConversation::factory()
+            ->for(User::factory())
+            ->create(['title' => '']);
+
+        $this->assertTrue($conversation->needsTitleGeneration());
+    }
+
+    public function test_needs_title_generation_returns_true_for_generic_english_title(): void
+    {
+        $conversation = AgentConversation::factory()
+            ->for(User::factory())
+            ->create(['title' => 'Greeting and Initial Contact']);
+
+        $this->assertTrue($conversation->needsTitleGeneration());
+    }
+
+    public function test_needs_title_generation_returns_false_for_structured_title(): void
+    {
+        $conversation = AgentConversation::factory()
+            ->for(User::factory())
+            ->create(['title' => 'Kashta_Sofia_2026-01-15_Nebrezhnost']);
+
+        $this->assertFalse($conversation->needsTitleGeneration());
+    }
+
+    public function test_needs_title_generation_returns_false_for_partial_unknown_structured_title(): void
+    {
+        $conversation = AgentConversation::factory()
+            ->for(User::factory())
+            ->create(['title' => 'Neizvestno_Sofia_Neizvestno_Neizvestno']);
+
+        $this->assertFalse($conversation->needsTitleGeneration());
     }
 }

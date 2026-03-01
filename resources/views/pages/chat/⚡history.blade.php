@@ -2,10 +2,18 @@
 
 use App\Models\AgentConversation;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Title;
 use Livewire\Component;
+use Livewire\WithPagination;
 
 new #[Title('Conversation history')] class extends Component {
+    use WithPagination;
+
+    public ?string $confirmingDeleteId = null;
+
+    public ?string $successMessage = null;
+
     public function renameConversation(string $conversationId, string $newTitle): void
     {
         $newTitle = trim($newTitle);
@@ -19,15 +27,39 @@ new #[Title('Conversation history')] class extends Component {
             ->update(['title' => $newTitle]);
     }
 
+    public function confirmDelete(string $id): void
+    {
+        $this->confirmingDeleteId = $id;
+    }
+
+    public function cancelDelete(): void
+    {
+        $this->confirmingDeleteId = null;
+    }
+
+    public function deleteConversation(string $id): void
+    {
+        $conversation = AgentConversation::where('id', $id)
+            ->where('user_id', Auth::id())
+            ->firstOrFail();
+
+        DB::table('agent_conversation_messages')
+            ->where('conversation_id', $conversation->id)
+            ->delete();
+
+        $conversation->delete();
+
+        $this->confirmingDeleteId = null;
+        $this->successMessage = __('Conversation deleted successfully.');
+    }
+
     public function with(): array
     {
-        $conversations = AgentConversation::query()
-            ->where('user_id', Auth::id())
-            ->orderByDesc('updated_at')
-            ->get(['id', 'title', 'status', 'updated_at', 'created_at']);
-
         return [
-            'conversations' => $conversations,
+            'conversations' => AgentConversation::query()
+                ->where('user_id', Auth::id())
+                ->orderByDesc('updated_at')
+                ->paginate(25),
         ];
     }
 }; ?>
@@ -40,6 +72,14 @@ new #[Title('Conversation history')] class extends Component {
         </flux:button>
     </div>
 
+    @if($successMessage)
+        <flux:callout variant="success" icon="check-circle" :heading="$successMessage">
+            <x-slot name="controls">
+                <flux:button icon="x-mark" variant="ghost" size="sm" wire:click="$set('successMessage', null)" />
+            </x-slot>
+        </flux:callout>
+    @endif
+
     <div class="rounded-xl border border-neutral-200 dark:border-neutral-700">
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
@@ -49,7 +89,7 @@ new #[Title('Conversation history')] class extends Component {
                         <th class="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">{{ __('Status') }}</th>
                         <th class="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">{{ __('Last activity') }}</th>
                         <th class="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">{{ __('Date') }}</th>
-                        <th class="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400"></th>
+                        <th class="px-6 py-3"></th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-700">
@@ -92,9 +132,12 @@ new #[Title('Conversation history')] class extends Component {
                             <td class="px-6 py-1 text-zinc-600 dark:text-zinc-400">{{ \Carbon\Carbon::parse($conversation->updated_at)->diffForHumans() }}</td>
                             <td class="px-6 py-1 text-zinc-600 dark:text-zinc-400">{{ \Carbon\Carbon::parse($conversation->created_at)->format('d.m.Y H:i') }}</td>
                             <td class="px-6 py-1 text-right">
-                                <flux:button :href="route('chat.index', $conversation->id)" size="sm" wire:navigate>
-                                    {{ __('Open') }}
-                                </flux:button>
+                                <div class="flex items-center justify-end gap-2">
+                                    <flux:button :href="route('chat.index', $conversation->id)" size="sm" wire:navigate>
+                                        {{ __('Open') }}
+                                    </flux:button>
+                                    <flux:button variant="danger" size="sm" icon="trash" wire:click="confirmDelete('{{ $conversation->id }}')" wire:target="confirmDelete('{{ $conversation->id }}')" tooltip="{{ __('Delete') }}" />
+                                </div>
                             </td>
                         </tr>
                     @empty
@@ -107,5 +150,33 @@ new #[Title('Conversation history')] class extends Component {
                 </tbody>
             </table>
         </div>
+
+        @if($conversations->hasPages())
+            <div class="px-6 py-3">
+                {{ $conversations->links() }}
+            </div>
+        @endif
     </div>
+
+    {{-- Delete confirmation modal --}}
+    @if($confirmingDeleteId)
+        @php
+            $conversationToDelete = AgentConversation::find($confirmingDeleteId);
+        @endphp
+
+        <flux:modal wire:model.self="confirmingDeleteId" :closable="true">
+            <div class="space-y-4">
+                <flux:heading size="lg">{{ __('Delete conversation') }}</flux:heading>
+
+                <p class="text-sm text-zinc-600 dark:text-zinc-400">
+                    {{ __('Are you sure you want to delete :title? This action cannot be undone.', ['title' => $conversationToDelete?->title]) }}
+                </p>
+
+                <div class="flex justify-end gap-3">
+                    <flux:button wire:click="cancelDelete">{{ __('Cancel') }}</flux:button>
+                    <flux:button variant="danger" wire:click="deleteConversation('{{ $confirmingDeleteId }}')">{{ __('Delete') }}</flux:button>
+                </div>
+            </div>
+        </flux:modal>
+    @endif
 </div>
