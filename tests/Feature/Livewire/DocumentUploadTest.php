@@ -7,6 +7,7 @@ namespace Tests\Feature\Livewire;
 use App\Enums\DocumentStatus;
 use App\Jobs\ProcessDocument;
 use App\Models\Document;
+use App\Models\DocumentChunk;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -235,5 +236,97 @@ class DocumentUploadTest extends TestCase
 
         $this->assertDatabaseHas('documents', ['original_filename' => 'new-file.docx']);
         Bus::assertDispatchedTimes(ProcessDocument::class, 1);
+    }
+
+    public function test_admin_can_delete_document(): void
+    {
+        Storage::fake('private');
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $filePath = 'documents/test-file.docx';
+        Storage::disk('private')->put($filePath, 'content');
+
+        $document = Document::factory()->create([
+            'file_path' => $filePath,
+            'uploaded_by' => $admin->id,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test('pages::documents.index')
+            ->call('confirmDelete', $document->id)
+            ->assertSet('confirmingDeleteId', $document->id)
+            ->call('deleteDocument', $document->id)
+            ->assertSet('confirmingDeleteId', null);
+
+        $this->assertDatabaseMissing('documents', ['id' => $document->id]);
+        Storage::disk('private')->assertMissing($filePath);
+    }
+
+    public function test_regular_user_cannot_delete_document(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $document = Document::factory()->create([
+            'uploaded_by' => $admin->id,
+        ]);
+
+        Livewire::actingAs($user)
+            ->test('pages::documents.index')
+            ->assertForbidden();
+    }
+
+    public function test_deleting_document_removes_chunks(): void
+    {
+        Storage::fake('private');
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $filePath = 'documents/chunked-file.docx';
+        Storage::disk('private')->put($filePath, 'content');
+
+        $document = Document::factory()->create([
+            'file_path' => $filePath,
+            'uploaded_by' => $admin->id,
+        ]);
+
+        DocumentChunk::factory()->count(3)->create([
+            'document_id' => $document->id,
+        ]);
+
+        $this->assertDatabaseCount('document_chunks', 3);
+
+        Livewire::actingAs($admin)
+            ->test('pages::documents.index')
+            ->call('confirmDelete', $document->id)
+            ->call('deleteDocument', $document->id);
+
+        $this->assertDatabaseMissing('documents', ['id' => $document->id]);
+        $this->assertDatabaseCount('document_chunks', 0);
+    }
+
+    public function test_cancel_delete_resets_state(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $document = Document::factory()->create([
+            'uploaded_by' => $admin->id,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test('pages::documents.index')
+            ->call('confirmDelete', $document->id)
+            ->assertSet('confirmingDeleteId', $document->id)
+            ->call('cancelDelete')
+            ->assertSet('confirmingDeleteId', null);
+
+        $this->assertDatabaseHas('documents', ['id' => $document->id]);
     }
 }

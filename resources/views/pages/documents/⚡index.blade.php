@@ -9,10 +9,11 @@ use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use Livewire\WithFileUploads;
+use Livewire\WithPagination;
 
 new #[Title('Knowledge base')]
 class extends Component {
-    use WithFileUploads;
+    use WithFileUploads, WithPagination;
 
     /** @var array<int, TemporaryUploadedFile> */
     public array $files = [];
@@ -21,6 +22,10 @@ class extends Component {
     public array $processingFiles = [];
 
     public bool $showProcessingModal = false;
+
+    public ?int $confirmingDeleteId = null;
+
+    public ?string $successMessage = null;
 
     public function mount(): void
     {
@@ -111,12 +116,36 @@ class extends Component {
         $this->processingFiles = [];
     }
 
+    public function confirmDelete(int $id): void
+    {
+        $this->confirmingDeleteId = $id;
+    }
+
+    public function cancelDelete(): void
+    {
+        $this->confirmingDeleteId = null;
+    }
+
+    public function deleteDocument(int $id): void
+    {
+        abort_unless(Auth::user()->isAdmin(), 403);
+
+        $document = Document::findOrFail($id);
+
+        Storage::disk('private')->delete($document->file_path);
+
+        $document->delete();
+
+        $this->confirmingDeleteId = null;
+        $this->successMessage = __('Document deleted successfully.');
+    }
+
     public function with(): array
     {
         $hasProcessing = Document::whereIn('status', [DocumentStatus::Pending, DocumentStatus::Processing])->exists();
 
         return [
-            'documents' => Document::with('uploader')->latest()->get(),
+            'documents' => Document::with('uploader')->latest()->paginate(25),
             'hasProcessing' => $hasProcessing,
             'maxUploadLabel' => format_bytes(max_upload_size_kb() * 1024),
         ];
@@ -159,6 +188,14 @@ class extends Component {
         </form>
     </div>
 
+    @if($successMessage)
+        <flux:callout variant="success" icon="check-circle" :heading="$successMessage">
+            <x-slot name="controls">
+                <flux:button icon="x-mark" variant="ghost" size="sm" wire:click="$set('successMessage', null)" />
+            </x-slot>
+        </flux:callout>
+    @endif
+
     {{-- Document list --}}
     <div class="rounded-xl border border-neutral-200 dark:border-neutral-700">
         <div class="overflow-x-auto">
@@ -169,6 +206,7 @@ class extends Component {
                     <th class="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">{{ __('Uploaded by') }}</th>
                     <th class="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">{{ __('Status') }}</th>
                     <th class="px-6 py-3 font-medium text-zinc-500 dark:text-zinc-400">{{ __('Date') }}</th>
+                    <th class="px-6 py-3"></th>
                 </tr>
                 </thead>
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-700">
@@ -194,10 +232,13 @@ class extends Component {
                             @endswitch
                         </td>
                         <td class="px-6 py-1 text-zinc-600 dark:text-zinc-400">{{ $document->created_at->format('d.m.Y H:i') }}</td>
+                        <td class="px-6 py-1 text-right">
+                            <flux:button variant="danger" size="sm" icon="trash" wire:click="confirmDelete({{ $document->id }})" wire:target="confirmDelete({{ $document->id }})" tooltip="{{ __('Delete') }}" />
+                        </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="4" class="px-6 py-3 text-center text-zinc-500">
+                        <td colspan="5" class="px-6 py-3 text-center text-zinc-500">
                             {{ __('No uploaded documents.') }}
                         </td>
                     </tr>
@@ -205,6 +246,12 @@ class extends Component {
                 </tbody>
             </table>
         </div>
+
+        @if($documents->hasPages())
+            <div class="px-6 py-3">
+                {{ $documents->links() }}
+            </div>
+        @endif
     </div>
 
     {{-- Processing modal --}}
@@ -257,5 +304,27 @@ class extends Component {
                 </div>
             </flux:modal>
         </div>
+    @endif
+
+    {{-- Delete confirmation modal --}}
+    @if($confirmingDeleteId)
+        @php
+            $documentToDelete = Document::find($confirmingDeleteId);
+        @endphp
+
+        <flux:modal wire:model.self="confirmingDeleteId" :closable="true">
+            <div class="space-y-4">
+                <flux:heading size="lg">{{ __('Delete document') }}</flux:heading>
+
+                <p class="text-sm text-zinc-600 dark:text-zinc-400">
+                    {{ __('Are you sure you want to delete :filename? This action cannot be undone.', ['filename' => $documentToDelete?->original_filename]) }}
+                </p>
+
+                <div class="flex justify-end gap-3">
+                    <flux:button wire:click="cancelDelete">{{ __('Cancel') }}</flux:button>
+                    <flux:button variant="danger" wire:click="deleteDocument({{ $confirmingDeleteId }})">{{ __('Delete') }}</flux:button>
+                </div>
+            </div>
+        </flux:modal>
     @endif
 </div>

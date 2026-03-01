@@ -165,6 +165,10 @@
     "Successfully processed": "Успешно обработен",
     "This document already exists in the knowledge base.": "Този документ вече съществува в базата знания.",
     "An error occurred during processing.": "Възникна грешка при обработката.",
+    "Delete": "Изтриване",
+    "Delete document": "Изтриване на документ",
+    "Are you sure you want to delete :filename? This action cannot be undone.": "Сигурни ли сте, че искате да изтриете :filename? Това действие не може да бъде отменено.",
+    "Document deleted successfully.": "Документът е изтрит успешно.",
 
     "You cannot change your own role.": "Не можете да промените собствената си роля.",
     "Role": "Роля",
