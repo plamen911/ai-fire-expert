@@ -95,13 +95,12 @@ new #[Title('Conversation history')] class extends Component {
                 <tbody class="divide-y divide-neutral-200 dark:divide-neutral-700">
                     @forelse($conversations as $conversation)
                         <tr wire:key="conv-{{ $conversation->id }}"
-                            x-data="{ editing: false, newTitle: '{{ str_replace("'", "\\'", $conversation->title) }}' }"
-                            class="group">
-                            <td class="px-6 py-1 text-zinc-900 dark:text-zinc-100">
+                            x-data="{ editing: false, newTitle: '{{ str_replace("'", "\\'", $conversation->title) }}' }">
+                            <td class="group px-6 py-1 text-zinc-900 dark:text-zinc-100">
                                 <div x-show="!editing" class="flex items-center gap-2">
                                     <span>{{ $conversation->title }}</span>
                                     <button @click.stop="editing = true; $nextTick(() => $refs.historyRename{{ str_replace('-', '', $conversation->id) }}.focus())"
-                                            class="rounded p-0.5 text-zinc-400 opacity-0 transition-opacity hover:text-zinc-600 group-hover:opacity-100 dark:hover:text-zinc-300">
+                                            class="invisible rounded p-0.5 text-zinc-400 hover:text-zinc-600 group-hover:visible dark:hover:text-zinc-300">
                                         <flux:icon name="pencil-square" class="size-3.5" />
                                     </button>
                                 </div>
@@ -133,9 +132,7 @@ new #[Title('Conversation history')] class extends Component {
                             <td class="px-6 py-1 text-zinc-600 dark:text-zinc-400">{{ \Carbon\Carbon::parse($conversation->created_at)->format('d.m.Y H:i') }}</td>
                             <td class="px-6 py-1 text-right">
                                 <div class="flex items-center justify-end gap-2">
-                                    <flux:button :href="route('chat.index', $conversation->id)" size="sm" wire:navigate>
-                                        {{ __('Open') }}
-                                    </flux:button>
+                                    <flux:button :href="route('chat.index', $conversation->id)" size="sm" icon="arrow-top-right-on-square" wire:navigate tooltip="{{ __('Open') }}" />
                                     <flux:button variant="danger" size="sm" icon="trash" wire:click="confirmDelete('{{ $conversation->id }}')" wire:target="confirmDelete('{{ $conversation->id }}')" tooltip="{{ __('Delete') }}" />
                                 </div>
                             </td>
