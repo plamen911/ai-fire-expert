@@ -286,7 +286,7 @@ class ChatTest extends TestCase
 
         $this->assertEquals('assistant', $lastMessage['role']);
         $this->assertStringContainsString(
-            'An error occurred while communicating with the AI service',
+            __('An error occurred while communicating with the AI service. Please try again.'),
             $lastMessage['content']
         );
     }

@@ -104,7 +104,7 @@ class DocumentProcessor
     }
 
     /**
-     * Create a Document record from markdown content and save the file to storage.
+     * Create a Document record from Markdown content and save the file to storage.
      * Returns null if a document with the same content already exists (deduplication via file_hash).
      */
     public function createFromMarkdown(string $markdownContent, string $filename, int $uploadedBy): ?Document
@@ -116,7 +116,7 @@ class DocumentProcessor
         }
 
         $filePath = 'generated/'.$filename;
-        Storage::disk('local')->put('private/'.$filePath, $markdownContent);
+        Storage::disk('local')->put($filePath, $markdownContent);
 
         return Document::create([
             'original_filename' => $filename,

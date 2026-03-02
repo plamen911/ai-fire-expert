@@ -175,5 +175,6 @@
 
     "You cannot change your own role.": "Не можете да промените собствената си роля.",
     "Role": "Роля",
-    "Registration": "Регистрация"
+    "Registration": "Регистрация",
+    "An error occurred while communicating with the AI service. Please try again.": "Възникна грешка при комуникацията с AI услугата. Моля, опитайте отново."
 }

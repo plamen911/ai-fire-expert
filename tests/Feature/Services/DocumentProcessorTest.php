@@ -111,8 +111,8 @@ class DocumentProcessorTest extends TestCase
             'uploaded_by' => $user->id,
         ]);
 
-        Storage::disk('local')->assertExists('private/generated/'.$filename);
-        $this->assertEquals($markdown, Storage::disk('local')->get('private/generated/'.$filename));
+        Storage::disk('local')->assertExists('generated/'.$filename);
+        $this->assertEquals($markdown, Storage::disk('local')->get('generated/'.$filename));
     }
 
     public function test_create_from_markdown_deduplicates_by_file_hash(): void

@@ -17,7 +17,7 @@ use Laravel\Ai\Promptable;
 use Laravel\Ai\Tools\SimilaritySearch;
 
 #[Provider(Lab::Anthropic)]
-#[Model('claude-sonnet-4-20250514')]
+#[Model('claude-sonnet-4-6')]
 #[MaxSteps(6)]
 class ForensicFireExpert implements Agent, Conversational, HasTools
 {

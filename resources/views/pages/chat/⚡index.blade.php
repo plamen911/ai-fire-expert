@@ -92,7 +92,7 @@ class extends Component {
             $response->each(function (mixed $event) use (&$fullText): void {
                 if ($event instanceof TextDelta) {
                     $fullText .= $event->delta;
-                    $this->stream(to: 'assistant-response', content: $event->delta);
+                    $this->stream(content: $event->delta, to: 'assistant-response');
                 }
             });
         } catch (\Throwable $e) {
