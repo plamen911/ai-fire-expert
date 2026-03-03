@@ -8,6 +8,7 @@ use App\Services\DocumentProcessor;
 use App\Services\ReportParser;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Laravel\Ai\Exceptions\FailoverableException;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Title;
@@ -95,6 +96,26 @@ class extends Component {
                     $this->stream(content: $event->delta, to: 'assistant-response');
                 }
             });
+        } catch (FailoverableException $e) {
+            report($e);
+
+            try {
+                $fullText = (string) $agent->prompt($userMessage);
+            } catch (\Throwable $inner) {
+                report($inner);
+
+                $this->isStreaming = false;
+
+                $this->chatMessages[] = [
+                    'role' => 'assistant',
+                    'content' => __('An error occurred while communicating with the AI service. Please try again.'),
+                ];
+
+                $this->dispatch('message-rendered');
+                $this->dispatch('scroll-to-bottom');
+
+                return;
+            }
         } catch (\Throwable $e) {
             report($e);
 
@@ -105,6 +126,7 @@ class extends Component {
                 'content' => __('An error occurred while communicating with the AI service. Please try again.'),
             ];
 
+            $this->dispatch('message-rendered');
             $this->dispatch('scroll-to-bottom');
 
             return;
@@ -122,6 +144,7 @@ class extends Component {
         ];
 
         $this->isStreaming = false;
+        $this->dispatch('message-rendered');
         $this->dispatch('scroll-to-bottom');
 
         $report = app(ReportParser::class)->parse($fullText);
@@ -245,7 +268,8 @@ class extends Component {
 
 }; ?>
 
-<div class="flex h-full w-full" x-data="{ autoScroll: true }">
+<div class="flex h-full w-full" x-data="{ autoScroll: true, pendingMessage: '' }"
+     x-on:message-rendered.window="pendingMessage = ''">
     {{-- Chat panel --}}
     <div class="flex min-h-0 flex-1 flex-col p-6">
         {{-- Header --}}
@@ -274,6 +298,7 @@ class extends Component {
 
             @if(empty($chatMessages))
                 <div class="flex h-full items-center justify-center text-zinc-400"
+                     x-show="!pendingMessage"
                      wire:loading.remove wire:target="sendMessage">
                     <div class="text-center">
                         <flux:icon name="chat-bubble-left-right" class="mx-auto mb-2 size-12"/>
@@ -312,6 +337,15 @@ class extends Component {
                 </div>
             @endforeach
 
+            {{-- Optimistic user message (shown instantly before Livewire responds) --}}
+            <template x-if="pendingMessage">
+                <div class="mb-4 flex justify-end">
+                    <div class="max-w-[80%] rounded-xl bg-blue-600 px-4 py-3 text-white"
+                         x-html="pendingMessage.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')">
+                    </div>
+                </div>
+            </template>
+
             {{-- Thinking indicator --}}
             <div wire:loading wire:target="sendMessage" class="mb-4 flex justify-start">
                 <div class="max-w-[80%] rounded-xl bg-zinc-100 px-4 py-3 dark:bg-zinc-700">
@@ -337,7 +371,7 @@ class extends Component {
 
         {{-- Input --}}
         <form wire:submit="sendMessage" class="flex flex-col gap-2"
-              x-on:submit="$nextTick(() => { $el.querySelector('textarea').value = ''; $refs.chatContainer.scrollTop = $refs.chatContainer.scrollHeight })">
+              x-on:submit="pendingMessage = $wire.message; $nextTick(() => { $el.querySelector('textarea').value = ''; $refs.chatContainer.scrollTop = $refs.chatContainer.scrollHeight })">
             <flux:textarea wire:model="message"
                            :placeholder="__('Write a message...')"
                            :disabled="$isStreaming"

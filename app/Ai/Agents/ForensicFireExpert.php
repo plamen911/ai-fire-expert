@@ -8,6 +8,7 @@ use App\Models\DocumentChunk;
 use Laravel\Ai\Attributes\MaxSteps;
 use Laravel\Ai\Attributes\Model;
 use Laravel\Ai\Attributes\Provider;
+use Laravel\Ai\Attributes\Timeout;
 use Laravel\Ai\Concerns\RemembersConversations;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\Conversational;
@@ -17,8 +18,9 @@ use Laravel\Ai\Promptable;
 use Laravel\Ai\Tools\SimilaritySearch;
 
 #[Provider(Lab::Anthropic)]
-#[Model('claude-sonnet-4-6')]
+#[Model('claude-haiku-4-5-20251001')]
 #[MaxSteps(6)]
+#[Timeout(120)]
 class ForensicFireExpert implements Agent, Conversational, HasTools
 {
     use Promptable, RemembersConversations;

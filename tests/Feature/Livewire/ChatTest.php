@@ -10,6 +10,7 @@ use App\Jobs\ProcessDocument;
 use App\Models\AgentConversation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Laravel\Ai\Exceptions\RateLimitedException;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -289,6 +290,37 @@ class ChatTest extends TestCase
             __('An error occurred while communicating with the AI service. Please try again.'),
             $lastMessage['content']
         );
+    }
+
+    public function test_rate_limit_falls_back_to_non_streaming_prompt(): void
+    {
+        $callCount = 0;
+
+        ForensicFireExpert::fake(function () use (&$callCount): string {
+            $callCount++;
+
+            if ($callCount === 1) {
+                throw RateLimitedException::forProvider('anthropic');
+            }
+
+            return 'Fallback response from OpenAI';
+        });
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $component = Livewire::actingAs($user)
+            ->test('pages::chat.index')
+            ->set('message', 'Здравейте')
+            ->call('sendMessage');
+
+        $component->assertSet('isStreaming', false);
+
+        $chatMessages = $component->get('chatMessages');
+        $lastMessage = end($chatMessages);
+
+        $this->assertEquals('assistant', $lastMessage['role']);
+        $this->assertStringContainsString('Fallback response from OpenAI', $lastMessage['content']);
     }
 
     public function test_empty_ai_response_shows_fallback_message(): void

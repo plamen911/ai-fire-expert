@@ -17,13 +17,21 @@ class ProcessDocument implements ShouldQueue
 
     public int $timeout = 300;
 
-    public int $tries = 1;
+    public int $tries = 3;
 
     public function __construct(public Document $document) {}
 
     public function handle(DocumentProcessor $processor): void
     {
         $processor->process($this->document);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function backoff(): array
+    {
+        return [10, 30];
     }
 
     public function failed(Throwable $exception): void
