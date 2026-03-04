@@ -192,6 +192,185 @@ class ChatHistoryTest extends TestCase
         $component->assertSet('showHistoryModal', false);
     }
 
+    public function test_history_page_filters_conversations_by_search(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        AgentConversation::factory()->for($user)->create(['title' => 'Пожар в склад Плевен']);
+        AgentConversation::factory()->for($user)->create(['title' => 'Експертиза за къща София']);
+        AgentConversation::factory()->for($user)->create(['title' => 'Палеж на автомобил']);
+
+        Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->set('search', 'Плевен')
+            ->assertSee('Пожар в склад Плевен')
+            ->assertDontSee('Експертиза за къща София')
+            ->assertDontSee('Палеж на автомобил');
+    }
+
+    public function test_history_search_matches_partial_title(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        AgentConversation::factory()->for($user)->create(['title' => 'Пожар в склад Варна']);
+
+        Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->set('search', 'склад')
+            ->assertSee('Пожар в склад Варна');
+    }
+
+    public function test_empty_search_shows_all_conversations(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        AgentConversation::factory()->for($user)->count(3)->create();
+
+        $component = Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->set('search', 'несъществуващо')
+            ->set('search', '');
+
+        $this->assertCount(3, $component->viewData('conversations'));
+    }
+
+    public function test_modal_search_filters_recent_conversations(): void
+    {
+        ForensicFireExpert::fake([]);
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        AgentConversation::factory()->for($user)->create(['title' => 'Пожар Плевен']);
+        AgentConversation::factory()->for($user)->create(['title' => 'Палеж София']);
+
+        $component = Livewire::actingAs($user)
+            ->test('pages::chat.index')
+            ->call('loadRecentConversations');
+
+        $this->assertCount(2, $component->get('recentConversations'));
+
+        $component->updateProperty('historySearch', 'Плевен');
+
+        $recentConversations = $component->get('recentConversations');
+        $this->assertCount(1, $recentConversations);
+        $this->assertEquals('Пожар Плевен', $recentConversations[0]['title']);
+    }
+
+    public function test_export_conversation_from_history(): void
+    {
+        ForensicFireExpert::fake([]);
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create(['title' => 'Тест експорт']);
+
+        Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->call('exportConversation', $conversation->id)
+            ->assertFileDownloaded('conversation_' . mb_substr($conversation->id, 0, 8) . '.md');
+    }
+
+    public function test_toggle_star_marks_conversation_as_starred(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create(['is_starred' => false]);
+
+        Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->call('toggleStar', $conversation->id);
+
+        $this->assertTrue($conversation->fresh()->is_starred);
+    }
+
+    public function test_toggle_star_unmarks_starred_conversation(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create(['is_starred' => true]);
+
+        Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->call('toggleStar', $conversation->id);
+
+        $this->assertFalse($conversation->fresh()->is_starred);
+    }
+
+    public function test_starred_filter_shows_only_starred_conversations(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        AgentConversation::factory()->for($user)->create(['title' => 'Starred one', 'is_starred' => true]);
+        AgentConversation::factory()->for($user)->create(['title' => 'Not starred', 'is_starred' => false]);
+
+        $component = Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->set('starredOnly', true);
+
+        $conversations = $component->viewData('conversations');
+        $this->assertCount(1, $conversations);
+        $this->assertEquals('Starred one', $conversations->first()->title);
+    }
+
+    public function test_toggle_star_rejects_other_users_conversation(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $otherUser = User::factory()->create();
+        $otherUser->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($otherUser)->create();
+
+        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+
+        Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->call('toggleStar', $conversation->id);
+    }
+
+    public function test_export_conversation_rejects_other_users(): void
+    {
+        ForensicFireExpert::fake([]);
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $otherUser = User::factory()->create();
+        $otherUser->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($otherUser)->create();
+
+        $this->expectException(\Illuminate\Database\Eloquent\ModelNotFoundException::class);
+
+        Livewire::actingAs($user)
+            ->test('pages::chat.history')
+            ->call('exportConversation', $conversation->id);
+    }
+
+    public function test_export_from_chat_page(): void
+    {
+        ForensicFireExpert::fake([]);
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create();
+
+        Livewire::actingAs($user)
+            ->test('pages::chat.index', ['conversationId' => $conversation->id])
+            ->call('exportConversation')
+            ->assertFileDownloaded();
+    }
+
     public function test_load_conversation_rejects_other_users(): void
     {
         ForensicFireExpert::fake([]);

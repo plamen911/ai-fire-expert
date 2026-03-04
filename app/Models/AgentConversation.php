@@ -22,6 +22,7 @@ class AgentConversation extends Model
         'user_id',
         'title',
         'status',
+        'is_starred',
     ];
 
     /**
@@ -31,6 +32,7 @@ class AgentConversation extends Model
     {
         return [
             'status' => ConversationStatus::class,
+            'is_starred' => 'boolean',
         ];
     }
 

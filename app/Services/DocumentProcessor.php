@@ -12,6 +12,7 @@ use Laravel\Ai\Embeddings;
 use Laravel\Ai\Exceptions\FailoverableException;
 use PhpOffice\PhpWord\Element\TextBreak;
 use PhpOffice\PhpWord\IOFactory;
+use Smalot\PdfParser\Parser as PdfParser;
 
 class DocumentProcessor
 {
@@ -30,6 +31,17 @@ class DocumentProcessor
         }
 
         return trim($text);
+    }
+
+    /**
+     * Extract plain text from a PDF file.
+     */
+    public function extractTextFromPdf(string $filePath): string
+    {
+        $parser = new PdfParser;
+        $pdf = $parser->parseFile($filePath);
+
+        return trim($pdf->getText());
     }
 
     /**
@@ -136,8 +148,10 @@ class DocumentProcessor
 
         $fullPath = storage_path('app/private/'.$document->file_path);
 
-        if (str_ends_with($document->file_path, '.md')) {
+        if (str_ends_with($document->file_path, '.md') || str_ends_with($document->file_path, '.txt')) {
             $text = file_get_contents($fullPath);
+        } elseif (str_ends_with($document->file_path, '.pdf')) {
+            $text = $this->extractTextFromPdf($fullPath);
         } else {
             $text = $this->extractText($fullPath);
         }

@@ -126,6 +126,21 @@ class ChatTest extends TestCase
         $response->assertFileDownloaded('test.md');
     }
 
+    public function test_download_report_pdf_action(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $component = Livewire::actingAs($user)
+            ->test('pages::chat.index');
+
+        $component->set('reportContent', '# Test Report PDF');
+        $component->set('reportFilename', 'test.md');
+
+        $response = $component->call('downloadReportPdf');
+        $response->assertFileDownloaded('test.pdf');
+    }
+
     public function test_auto_title_generated_for_new_conversation(): void
     {
         ForensicFireExpert::fake([
@@ -361,6 +376,84 @@ class ChatTest extends TestCase
         $this->assertDatabaseHas('agent_conversations', [
             'id' => $conversation->id,
             'title' => 'Sklad_Plovdiv_2026-02-15_KasoSaedinenie',
+        ]);
+    }
+
+    public function test_continuing_conversation_preserves_conversation_id(): void
+    {
+        ForensicFireExpert::fake([
+            'Продължавам разговора за пожара.',
+        ]);
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create(['title' => 'Пожар в склад']);
+
+        $component = Livewire::actingAs($user)
+            ->test('pages::chat.index', ['conversationId' => $conversation->id]);
+
+        $component->assertSet('conversationId', $conversation->id);
+
+        $component->set('message', 'Какви са причините за пожара?')
+            ->call('sendMessage')
+            ->assertHasNoErrors();
+
+        $component->assertSet('conversationId', $conversation->id);
+    }
+
+    public function test_continuing_conversation_appends_messages(): void
+    {
+        ForensicFireExpert::fake([
+            'Причината е късо съединение в електрическата инсталация.',
+        ]);
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create(['title' => 'Пожар в склад']);
+
+        $component = Livewire::actingAs($user)
+            ->test('pages::chat.index', ['conversationId' => $conversation->id]);
+
+        $messagesBefore = count($component->get('chatMessages'));
+
+        $component->set('message', 'Каква е причината за пожара?')
+            ->call('sendMessage');
+
+        $messagesAfter = count($component->get('chatMessages'));
+
+        $this->assertGreaterThan($messagesBefore, $messagesAfter);
+
+        $chatMessages = $component->get('chatMessages');
+        $lastTwo = array_slice($chatMessages, -2);
+
+        $this->assertEquals('user', $lastTwo[0]['role']);
+        $this->assertEquals('assistant', $lastTwo[1]['role']);
+        $this->assertStringContainsString('късо съединение', $lastTwo[1]['content']);
+    }
+
+    public function test_new_chat_creates_new_conversation(): void
+    {
+        ForensicFireExpert::fake([
+            'Здравейте! Как мога да ви помогна?',
+        ]);
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $component = Livewire::actingAs($user)
+            ->test('pages::chat.index');
+
+        $component->set('message', 'Нов случай на пожар')
+            ->call('sendMessage');
+
+        $firstConversationId = $component->get('conversationId');
+        $this->assertNotNull($firstConversationId);
+
+        $this->assertDatabaseHas('agent_conversations', [
+            'id' => $firstConversationId,
+            'user_id' => $user->id,
         ]);
     }
 }

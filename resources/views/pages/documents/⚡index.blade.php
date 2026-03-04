@@ -3,8 +3,10 @@
 use App\Enums\DocumentStatus;
 use App\Jobs\ProcessDocument;
 use App\Models\Document;
+use App\Models\DocumentChunk;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -27,6 +29,12 @@ class extends Component {
 
     public ?string $successMessage = null;
 
+    public ?int $previewingDocumentId = null;
+
+    public ?string $previewContent = null;
+
+    public ?string $previewFilename = null;
+
     public function mount(): void
     {
         abort_unless(Auth::user()->isAdmin(), 403);
@@ -38,7 +46,7 @@ class extends Component {
 
         $this->validate([
             'files' => ['required', 'array', 'min:1'],
-            'files.*' => ['file', 'mimes:docx', 'max:' . max_upload_size_kb()],
+            'files.*' => ['file', 'mimes:docx,pdf,txt', 'max:' . max_upload_size_kb()],
         ]);
 
         $this->processingFiles = [];
@@ -140,14 +148,44 @@ class extends Component {
         $this->successMessage = __('Document deleted successfully.');
     }
 
+    public function previewDocument(int $id): void
+    {
+        $document = Document::with('chunks')->findOrFail($id);
+
+        $this->previewingDocumentId = $document->id;
+        $this->previewFilename = $document->original_filename;
+        $this->previewContent = $document->chunks
+            ->sortBy('chunk_index')
+            ->pluck('content')
+            ->join("\n\n---\n\n");
+
+        if (empty($this->previewContent)) {
+            $this->previewContent = __('No extracted content available for this document.');
+        }
+    }
+
+    public function closePreview(): void
+    {
+        $this->previewingDocumentId = null;
+        $this->previewContent = null;
+        $this->previewFilename = null;
+    }
+
     public function with(): array
     {
         $hasProcessing = Document::whereIn('status', [DocumentStatus::Pending, DocumentStatus::Processing])->exists();
+        $totalDocs = Document::count();
+        $totalChunks = DocumentChunk::count();
 
         return [
             'documents' => Document::with('uploader')->latest()->paginate(25),
             'hasProcessing' => $hasProcessing,
             'maxUploadLabel' => format_bytes(max_upload_size_kb() * 1024),
+            'totalDocs' => $totalDocs,
+            'totalChunks' => $totalChunks,
+            'avgChunks' => $totalDocs > 0 ? round($totalChunks / $totalDocs, 1) : 0,
+            'completedDocs' => Document::where('status', DocumentStatus::Completed)->count(),
+            'failedDocs' => Document::where('status', DocumentStatus::Failed)->count(),
         ];
     }
 
@@ -162,14 +200,39 @@ class extends Component {
 
     <flux:heading size="xl">{{ __('Knowledge base') }}</flux:heading>
 
+    {{-- Stats cards --}}
+    <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 dark:border-neutral-700">
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Documents') }}</span>
+            <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ $totalDocs }}</span>
+        </div>
+        <div class="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 dark:border-neutral-700">
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Chunks') }}</span>
+            <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ $totalChunks }}</span>
+        </div>
+        <div class="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 dark:border-neutral-700">
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Avg chunks/doc') }}</span>
+            <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ $avgChunks }}</span>
+        </div>
+        <div class="flex items-center gap-2 rounded-lg border border-neutral-200 px-3 py-1.5 dark:border-neutral-700">
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ __('Status') }}</span>
+            <span class="text-sm text-zinc-900 dark:text-zinc-100">
+                <span class="font-semibold text-green-600 dark:text-green-400">{{ $completedDocs }}</span> {{ __('ok') }}
+                @if($failedDocs > 0)
+                    / <span class="font-semibold text-red-500">{{ $failedDocs }}</span> {{ __('err') }}
+                @endif
+            </span>
+        </div>
+    </div>
+
     {{-- Upload panel --}}
     <div class="rounded-xl border border-neutral-200 p-6 dark:border-neutral-700">
         <flux:heading size="lg" class="mb-4">{{ __('Upload document') }}</flux:heading>
 
         <form wire:submit="save" class="flex items-end gap-4">
             <flux:field class="flex-1">
-                <flux:label>{{ __('Files (.docx, max :max)', ['max' => $maxUploadLabel]) }}</flux:label>
-                <input type="file" wire:model="files" accept=".docx" multiple
+                <flux:label>{{ __('Files (.docx, .pdf, .txt, max :max)', ['max' => $maxUploadLabel]) }}</flux:label>
+                <input type="file" wire:model="files" accept=".docx,.pdf,.txt" multiple
                        class="block w-full text-sm text-zinc-500 file:mr-4 file:rounded-lg file:border-0 file:bg-zinc-100 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-zinc-700 hover:file:bg-zinc-200 dark:text-zinc-400 dark:file:bg-zinc-700 dark:file:text-zinc-300"/>
                 <flux:error name="files.*"/>
             </flux:field>
@@ -233,7 +296,12 @@ class extends Component {
                         </td>
                         <td class="px-6 py-1 text-zinc-600 dark:text-zinc-400">{{ $document->created_at->format('d.m.Y H:i') }}</td>
                         <td class="px-6 py-1 text-right">
-                            <flux:button variant="danger" size="sm" icon="trash" wire:click="confirmDelete({{ $document->id }})" wire:target="confirmDelete({{ $document->id }})" tooltip="{{ __('Delete') }}" />
+                            <div class="flex items-center justify-end gap-2">
+                                @if($document->status === DocumentStatus::Completed)
+                                    <flux:button size="sm" icon="eye" wire:click="previewDocument({{ $document->id }})" tooltip="{{ __('View') }}" />
+                                @endif
+                                <flux:button variant="danger" size="sm" icon="trash" wire:click="confirmDelete({{ $document->id }})" wire:target="confirmDelete({{ $document->id }})" tooltip="{{ __('Delete') }}" />
+                            </div>
                         </td>
                     </tr>
                 @empty
@@ -304,6 +372,25 @@ class extends Component {
                 </div>
             </flux:modal>
         </div>
+    @endif
+
+    {{-- Document preview modal --}}
+    @if($previewingDocumentId)
+        <flux:modal wire:model.self="previewingDocumentId" class="max-w-3xl" :closable="true">
+            <div class="space-y-4">
+                <flux:heading size="lg">{{ $previewFilename }}</flux:heading>
+
+                <div class="max-h-[70vh] overflow-y-auto rounded-lg bg-zinc-50 p-4 dark:bg-zinc-800">
+                    <div class="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300">
+                        {!! Str::markdown($previewContent) !!}
+                    </div>
+                </div>
+
+                <div class="flex justify-end">
+                    <flux:button wire:click="closePreview">{{ __('Close') }}</flux:button>
+                </div>
+            </div>
+        </flux:modal>
     @endif
 
     {{-- Delete confirmation modal --}}

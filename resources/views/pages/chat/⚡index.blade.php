@@ -4,10 +4,12 @@ use App\Ai\Agents\ForensicFireExpert;
 use App\Enums\ConversationStatus;
 use App\Jobs\ProcessDocument;
 use App\Models\AgentConversation;
+use App\Models\ConversationFeedback;
 use App\Services\DocumentProcessor;
 use App\Services\ReportParser;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Exceptions\FailoverableException;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Livewire\Attributes\Layout;
@@ -34,6 +36,11 @@ class extends Component {
 
     public array $recentConversations = [];
 
+    public string $historySearch = '';
+
+    /** @var array<int, bool|null> */
+    public array $feedback = [];
+
     public function mount(?string $conversationId = null): void
     {
         if ($conversationId) {
@@ -58,6 +65,7 @@ class extends Component {
         }
 
         $this->restoreReportFromMessages();
+        $this->loadFeedback();
         $this->dispatch('scroll-to-bottom');
     }
 
@@ -99,11 +107,23 @@ class extends Component {
         } catch (FailoverableException $e) {
             report($e);
 
-            try {
-                $fullText = (string) $agent->prompt($userMessage);
-            } catch (\Throwable $inner) {
-                report($inner);
+            $fallbacks = [
+                [Lab::Gemini, 'gemini-2.0-flash'],
+                [Lab::OpenAI, 'gpt-4o-mini'],
+            ];
 
+            $fullText = null;
+
+            foreach ($fallbacks as [$fallbackProvider, $fallbackModel]) {
+                try {
+                    $fullText = (string) $agent->prompt($userMessage, provider: $fallbackProvider, model: $fallbackModel);
+                    break;
+                } catch (\Throwable $inner) {
+                    report($inner);
+                }
+            }
+
+            if ($fullText === null) {
                 $this->isStreaming = false;
 
                 $this->chatMessages[] = [
@@ -191,8 +211,21 @@ class extends Component {
 
     public function loadRecentConversations(): void
     {
+        $this->historySearch = '';
+        $this->searchRecentConversations();
+        $this->showHistoryModal = true;
+    }
+
+    public function updatedHistorySearch(): void
+    {
+        $this->searchRecentConversations();
+    }
+
+    private function searchRecentConversations(): void
+    {
         $this->recentConversations = AgentConversation::query()
             ->where('user_id', Auth::id())
+            ->when($this->historySearch, fn ($q) => $q->where('title', 'like', '%' . $this->historySearch . '%'))
             ->orderByDesc('updated_at')
             ->limit(10)
             ->get(['id', 'title', 'updated_at'])
@@ -202,8 +235,6 @@ class extends Component {
                 'updated_at' => $c->updated_at->diffForHumans(),
             ])
             ->toArray();
-
-        $this->showHistoryModal = true;
     }
 
     public function loadConversation(string $conversationId): void
@@ -230,8 +261,63 @@ class extends Component {
         }
 
         $this->restoreReportFromMessages();
+        $this->loadFeedback();
         $this->showHistoryModal = false;
         $this->dispatch('scroll-to-bottom');
+    }
+
+    public function submitFeedback(int $messageIndex, bool $isPositive): void
+    {
+        if (! $this->conversationId) {
+            return;
+        }
+
+        ConversationFeedback::updateOrCreate(
+            [
+                'conversation_id' => $this->conversationId,
+                'message_index' => $messageIndex,
+                'user_id' => Auth::id(),
+            ],
+            ['is_positive' => $isPositive]
+        );
+
+        $this->feedback[$messageIndex] = $isPositive;
+    }
+
+    public function exportConversation(): StreamedResponse
+    {
+        $lines = [];
+        $lines[] = '# ' . __('Conversation Export');
+        $lines[] = '';
+        $lines[] = '**' . __('Date') . ':** ' . now()->format('d.m.Y H:i');
+
+        if ($this->conversationId) {
+            $conversation = AgentConversation::find($this->conversationId);
+            if ($conversation?->title) {
+                $lines[] = '**' . __('Topic') . ':** ' . $conversation->title;
+            }
+        }
+
+        $lines[] = '';
+        $lines[] = '---';
+        $lines[] = '';
+
+        foreach ($this->chatMessages as $msg) {
+            $role = $msg['role'] === 'user' ? __('User') : __('Expert');
+            $lines[] = '### ' . $role;
+            $lines[] = '';
+            $lines[] = $msg['content'];
+            $lines[] = '';
+        }
+
+        $markdown = implode("\n", $lines);
+        $filename = 'conversation_' . ($this->conversationId ? mb_substr($this->conversationId, 0, 8) : 'export') . '.md';
+
+        return response()->streamDownload(function () use ($markdown): void {
+            echo $markdown;
+        }, $filename, [
+            'Content-Type' => 'text/markdown',
+        ]);
     }
 
     public function downloadReport(): StreamedResponse
@@ -243,6 +329,39 @@ class extends Component {
         }, $filename, [
             'Content-Type' => 'text/markdown',
         ]);
+    }
+
+    public function downloadReportPdf(): StreamedResponse
+    {
+        $html = \Illuminate\Support\Str::markdown($this->reportContent ?? '');
+        $filename = str_replace('.md', '.pdf', $this->reportFilename ?? 'Ekspertiza.pdf');
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML(
+            '<html><head><meta charset="UTF-8"><style>body { font-family: DejaVu Sans, sans-serif; font-size: 12px; }</style></head><body>' . $html . '</body></html>'
+        );
+
+        return response()->streamDownload(function () use ($pdf): void {
+            echo $pdf->output();
+        }, $filename, [
+            'Content-Type' => 'application/pdf',
+        ]);
+    }
+
+    private function loadFeedback(): void
+    {
+        $this->feedback = [];
+
+        if (! $this->conversationId) {
+            return;
+        }
+
+        $existing = ConversationFeedback::where('conversation_id', $this->conversationId)
+            ->where('user_id', Auth::id())
+            ->pluck('is_positive', 'message_index');
+
+        foreach ($existing as $index => $isPositive) {
+            $this->feedback[$index] = $isPositive;
+        }
     }
 
     private function restoreReportFromMessages(): void
@@ -269,7 +388,12 @@ class extends Component {
 }; ?>
 
 <div class="flex h-full w-full" x-data="{ autoScroll: true, pendingMessage: '' }"
-     x-on:message-rendered.window="pendingMessage = ''">
+     x-on:message-rendered.window="pendingMessage = ''"
+     @keydown.window="
+        if (($event.ctrlKey || $event.metaKey) && $event.key === 'n') { $event.preventDefault(); $wire.newChat(); }
+        if (($event.ctrlKey || $event.metaKey) && $event.key === 'h') { $event.preventDefault(); $wire.loadRecentConversations(); }
+        if ($event.key === 'Escape') { $wire.set('showHistoryModal', false); }
+     ">
     {{-- Chat panel --}}
     <div class="flex min-h-0 flex-1 flex-col p-6">
         {{-- Header --}}
@@ -280,11 +404,19 @@ class extends Component {
                     <flux:button size="sm" wire:click="downloadReport" icon="arrow-down-tray">
                         {{ __('Download .md') }}
                     </flux:button>
+                    <flux:button size="sm" wire:click="downloadReportPdf" icon="document">
+                        {{ __('Download .pdf') }}
+                    </flux:button>
                 @endif
-                <flux:button size="sm" wire:click="loadRecentConversations" icon="clock">
+                @if(count($chatMessages) > 0)
+                    <flux:button size="sm" wire:click="exportConversation" icon="document-arrow-down">
+                        {{ __('Export') }}
+                    </flux:button>
+                @endif
+                <flux:button size="sm" wire:click="loadRecentConversations" icon="clock" tooltip="Ctrl+H">
                     {{ __('History') }}
                 </flux:button>
-                <flux:button size="sm" wire:click="newChat" icon="plus">
+                <flux:button size="sm" wire:click="newChat" icon="plus" tooltip="Ctrl+N">
                     {{ __('New chat') }}
                 </flux:button>
             </div>
@@ -327,13 +459,55 @@ class extends Component {
                                 </flux:button>
                             </div>
                         @elseif($msg['role'] === 'assistant')
+                            @php
+                                $sources = [];
+                                $displayContent = preg_replace_callback(
+                                    '/\[Източник:\s*([^\]]+)\]/',
+                                    function ($matches) use (&$sources) {
+                                        $filename = trim($matches[1]);
+                                        $sources[] = $filename;
+                                        return '';
+                                    },
+                                    $msg['content']
+                                );
+                                $sources = array_unique($sources);
+                            @endphp
                             <div class="prose prose-sm dark:prose-invert max-w-none">
-                                {!! Str::markdown($msg['content']) !!}
+                                {!! Str::markdown($displayContent) !!}
                             </div>
+                            @if(count($sources))
+                                <details class="mt-3 border-t border-zinc-200 pt-2 dark:border-zinc-600">
+                                    <summary class="cursor-pointer text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                                        {{ __('Sources') }} ({{ count($sources) }})
+                                    </summary>
+                                    <div class="mt-1 flex flex-wrap gap-1">
+                                        @foreach($sources as $source)
+                                            <span class="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                                                <flux:icon name="document-text" class="size-3" />
+                                                {{ $source }}
+                                            </span>
+                                        @endforeach
+                                    </div>
+                                </details>
+                            @endif
                         @else
                             {!! nl2br(e($msg['content'])) !!}
                         @endif
                     </div>
+                    @if($msg['role'] === 'assistant' && $conversationId)
+                        <div class="mt-1 flex gap-1">
+                            <button wire:click="submitFeedback({{ $index }}, true)"
+                                    class="rounded p-1 transition {{ ($feedback[$index] ?? null) === true ? 'text-green-600 dark:text-green-400' : 'text-zinc-300 hover:text-green-500 dark:text-zinc-600 dark:hover:text-green-400' }}"
+                                    title="{{ __('Helpful') }}">
+                                <flux:icon name="hand-thumb-up" class="size-4" />
+                            </button>
+                            <button wire:click="submitFeedback({{ $index }}, false)"
+                                    class="rounded p-1 transition {{ ($feedback[$index] ?? null) === false ? 'text-red-500 dark:text-red-400' : 'text-zinc-300 hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400' }}"
+                                    title="{{ __('Not helpful') }}">
+                                <flux:icon name="hand-thumb-down" class="size-4" />
+                            </button>
+                        </div>
+                    @endif
                 </div>
             @endforeach
 
@@ -391,6 +565,12 @@ class extends Component {
         <flux:modal wire:model="showHistoryModal" class="max-w-lg">
             <div class="space-y-4">
                 <flux:heading size="lg">{{ __('Recent conversations') }}</flux:heading>
+
+                <flux:input wire:model.live.debounce.300ms="historySearch"
+                            icon="magnifying-glass"
+                            :placeholder="__('Search...')"
+                            size="sm"
+                            clearable />
 
                 @if(empty($recentConversations))
                     <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ __('No conversations yet.') }}</p>

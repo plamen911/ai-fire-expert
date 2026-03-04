@@ -160,6 +160,74 @@ class DocumentProcessorTest extends TestCase
         @unlink($fullPath);
     }
 
+    public function test_extract_text_from_pdf_calls_parser(): void
+    {
+        $processor = $this->createPartialMock(DocumentProcessor::class, ['extractTextFromPdf']);
+        $processor->method('extractTextFromPdf')
+            ->willReturn('Тестов PDF текст за експертиза.');
+
+        $text = $processor->extractTextFromPdf('/tmp/test.pdf');
+
+        $this->assertStringContainsString('Тестов PDF текст', $text);
+    }
+
+    public function test_process_routes_pdf_to_extract_text_from_pdf(): void
+    {
+        $filename = 'test_document.pdf';
+        $fullPath = storage_path('app/private/documents/' . $filename);
+        @mkdir(dirname($fullPath), 0755, true);
+        file_put_contents($fullPath, 'dummy pdf content');
+
+        $user = User::factory()->create();
+        $document = Document::factory()->create([
+            'file_path' => 'documents/' . $filename,
+            'uploaded_by' => $user->id,
+        ]);
+
+        $processor = $this->createPartialMock(DocumentProcessor::class, ['extractTextFromPdf', 'generateEmbeddings']);
+        $processor->method('extractTextFromPdf')
+            ->willReturn('Извлечен текст от PDF файл за пожаро-техническа експертиза.');
+        $processor->method('generateEmbeddings')
+            ->willReturn([array_fill(0, 1536, 0.1)]);
+
+        $processor->process($document);
+
+        $document->refresh();
+        $this->assertEquals(DocumentStatus::Completed, $document->status);
+        $this->assertGreaterThan(0, $document->chunks()->count());
+
+        @unlink($fullPath);
+    }
+
+    public function test_process_routes_txt_to_file_get_contents(): void
+    {
+        $filename = 'test_notes.txt';
+        $fullPath = storage_path('app/private/documents/' . $filename);
+        @mkdir(dirname($fullPath), 0755, true);
+        file_put_contents($fullPath, 'Текстов файл с бележки за пожар в складова база.');
+
+        $user = User::factory()->create();
+        $document = Document::factory()->create([
+            'file_path' => 'documents/' . $filename,
+            'uploaded_by' => $user->id,
+        ]);
+
+        $processor = $this->createPartialMock(DocumentProcessor::class, ['generateEmbeddings']);
+        $processor->method('generateEmbeddings')
+            ->willReturn([array_fill(0, 1536, 0.1)]);
+
+        $processor->process($document);
+
+        $document->refresh();
+        $this->assertEquals(DocumentStatus::Completed, $document->status);
+        $this->assertGreaterThan(0, $document->chunks()->count());
+
+        $chunk = $document->chunks()->first();
+        $this->assertStringContainsString('складова база', $chunk->content);
+
+        @unlink($fullPath);
+    }
+
     private function createTestDocx(string $content): string
     {
         $phpWord = new PhpWord;
@@ -172,4 +240,5 @@ class DocumentProcessorTest extends TestCase
 
         return $filePath;
     }
+
 }

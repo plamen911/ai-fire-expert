@@ -1,18 +1,43 @@
 <?php
 
+use App\Ai\Agents\ForensicFireExpert;
 use App\Models\AgentConversation;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 new #[Title('Conversation history')] class extends Component {
     use WithPagination;
 
+    public string $search = '';
+
+    public bool $starredOnly = false;
+
     public ?string $confirmingDeleteId = null;
 
     public ?string $successMessage = null;
+
+    public function updatedSearch(): void
+    {
+        $this->resetPage();
+    }
+
+    public function updatedStarredOnly(): void
+    {
+        $this->resetPage();
+    }
+
+    public function toggleStar(string $conversationId): void
+    {
+        $conversation = AgentConversation::where('id', $conversationId)
+            ->where('user_id', Auth::id())
+            ->firstOrFail();
+
+        $conversation->update(['is_starred' => ! $conversation->is_starred]);
+    }
 
     public function renameConversation(string $conversationId, string $newTitle): void
     {
@@ -37,6 +62,42 @@ new #[Title('Conversation history')] class extends Component {
         $this->confirmingDeleteId = null;
     }
 
+    public function exportConversation(string $id): StreamedResponse
+    {
+        $conversation = AgentConversation::where('id', $id)
+            ->where('user_id', Auth::id())
+            ->firstOrFail();
+
+        $agent = ForensicFireExpert::make()
+            ->continue($id, Auth::user());
+
+        $lines = [];
+        $lines[] = '# ' . __('Conversation Export');
+        $lines[] = '';
+        $lines[] = '**' . __('Topic') . ':** ' . $conversation->title;
+        $lines[] = '**' . __('Date') . ':** ' . $conversation->created_at->format('d.m.Y H:i');
+        $lines[] = '';
+        $lines[] = '---';
+        $lines[] = '';
+
+        foreach ($agent->messages() as $msg) {
+            $role = ($msg->role->value ?? $msg->role) === 'user' ? __('User') : __('Expert');
+            $lines[] = '### ' . $role;
+            $lines[] = '';
+            $lines[] = $msg->content ?? '';
+            $lines[] = '';
+        }
+
+        $markdown = implode("\n", $lines);
+        $filename = 'conversation_' . mb_substr($id, 0, 8) . '.md';
+
+        return response()->streamDownload(function () use ($markdown): void {
+            echo $markdown;
+        }, $filename, [
+            'Content-Type' => 'text/markdown',
+        ]);
+    }
+
     public function deleteConversation(string $id): void
     {
         $conversation = AgentConversation::where('id', $id)
@@ -58,17 +119,38 @@ new #[Title('Conversation history')] class extends Component {
         return [
             'conversations' => AgentConversation::query()
                 ->where('user_id', Auth::id())
+                ->when($this->search, fn ($q) => $q->where('title', 'like', '%' . $this->search . '%'))
+                ->when($this->starredOnly, fn ($q) => $q->where('is_starred', true))
+                ->orderByDesc('is_starred')
                 ->orderByDesc('updated_at')
                 ->paginate(25),
         ];
     }
 }; ?>
 
-<div class="mx-auto w-full max-w-4xl space-y-6 p-6">
+<div class="mx-auto w-full max-w-4xl space-y-6 p-6"
+     @keydown.window="
+        if (($event.ctrlKey || $event.metaKey) && $event.key === 'n') { $event.preventDefault(); window.location.href = '{{ route('chat.index') }}'; }
+        if ($event.key === 'Escape') { $wire.cancelDelete(); }
+     ">
     <div class="flex items-center justify-between">
         <flux:heading size="xl">{{ __('Conversation history') }}</flux:heading>
         <flux:button :href="route('chat.index')" icon="plus" size="sm" wire:navigate>
             {{ __('New chat') }}
+        </flux:button>
+    </div>
+
+    <div class="flex items-center gap-3">
+        <div class="flex-1">
+            <flux:input wire:model.live.debounce.300ms="search"
+                        icon="magnifying-glass"
+                        :placeholder="__('Search conversations...')"
+                        clearable />
+        </div>
+        <flux:button size="sm" wire:click="$toggle('starredOnly')"
+                     :variant="$starredOnly ? 'primary' : 'ghost'"
+                     icon="star">
+            {{ __('Starred') }}
         </flux:button>
     </div>
 
@@ -132,7 +214,11 @@ new #[Title('Conversation history')] class extends Component {
                             <td class="px-6 py-1 text-zinc-600 dark:text-zinc-400">{{ \Carbon\Carbon::parse($conversation->created_at)->format('d.m.Y H:i') }}</td>
                             <td class="px-6 py-1 text-right">
                                 <div class="flex items-center justify-end gap-2">
+                                    <button wire:click="toggleStar('{{ $conversation->id }}')" class="rounded p-1 transition-colors {{ $conversation->is_starred ? 'text-yellow-500 hover:text-yellow-600' : 'text-zinc-300 hover:text-yellow-500 dark:text-zinc-600' }}" title="{{ $conversation->is_starred ? __('Unstar') : __('Star') }}">
+                                        <flux:icon name="star" class="size-4" :variant="$conversation->is_starred ? 'solid' : 'outline'" />
+                                    </button>
                                     <flux:button :href="route('chat.index', $conversation->id)" size="sm" icon="arrow-top-right-on-square" wire:navigate tooltip="{{ __('Open') }}" />
+                                    <flux:button size="sm" icon="document-arrow-down" wire:click="exportConversation('{{ $conversation->id }}')" tooltip="{{ __('Export') }}" />
                                     <flux:button variant="danger" size="sm" icon="trash" wire:click="confirmDelete('{{ $conversation->id }}')" wire:target="confirmDelete('{{ $conversation->id }}')" tooltip="{{ __('Delete') }}" />
                                 </div>
                             </td>

@@ -136,8 +136,49 @@ class DocumentUploadTest extends TestCase
         $this->assertEquals('failed', $processingFiles[0]['status']);
     }
 
-    public function test_non_docx_file_is_rejected(): void
+    public function test_non_supported_file_is_rejected(): void
     {
+        Storage::fake('private');
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $file = UploadedFile::fake()->create('report.csv', 100, 'text/csv');
+
+        Livewire::actingAs($admin)
+            ->test('pages::documents.index')
+            ->set('files', [$file])
+            ->call('save')
+            ->assertHasErrors(['files.0']);
+    }
+
+    public function test_txt_upload_is_accepted(): void
+    {
+        Bus::fake([ProcessDocument::class]);
+        Storage::fake('private');
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $file = UploadedFile::fake()->createWithContent('notes.txt', 'Текст за тестване на txt файл.');
+
+        $component = Livewire::actingAs($admin)
+            ->test('pages::documents.index')
+            ->set('files', [$file])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertSet('showProcessingModal', true);
+
+        $processingFiles = $component->get('processingFiles');
+        $this->assertCount(1, $processingFiles);
+        $this->assertEquals('notes.txt', $processingFiles[0]['filename']);
+
+        Bus::assertDispatched(ProcessDocument::class);
+    }
+
+    public function test_pdf_upload_is_accepted(): void
+    {
+        Bus::fake([ProcessDocument::class]);
         Storage::fake('private');
 
         $admin = User::factory()->create();
@@ -145,11 +186,18 @@ class DocumentUploadTest extends TestCase
 
         $file = UploadedFile::fake()->create('report.pdf', 100, 'application/pdf');
 
-        Livewire::actingAs($admin)
+        $component = Livewire::actingAs($admin)
             ->test('pages::documents.index')
             ->set('files', [$file])
             ->call('save')
-            ->assertHasErrors(['files.0']);
+            ->assertHasNoErrors()
+            ->assertSet('showProcessingModal', true);
+
+        $processingFiles = $component->get('processingFiles');
+        $this->assertCount(1, $processingFiles);
+        $this->assertEquals('report.pdf', $processingFiles[0]['filename']);
+
+        Bus::assertDispatched(ProcessDocument::class);
     }
 
     public function test_oversized_file_is_rejected(): void
@@ -328,5 +376,73 @@ class DocumentUploadTest extends TestCase
             ->assertSet('confirmingDeleteId', null);
 
         $this->assertDatabaseHas('documents', ['id' => $document->id]);
+    }
+
+    public function test_admin_can_preview_document_content(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $document = Document::factory()->create([
+            'uploaded_by' => $admin->id,
+        ]);
+
+        DocumentChunk::factory()->create([
+            'document_id' => $document->id,
+            'chunk_index' => 0,
+            'content' => 'Първи чънк текст.',
+        ]);
+
+        DocumentChunk::factory()->create([
+            'document_id' => $document->id,
+            'chunk_index' => 1,
+            'content' => 'Втори чънк текст.',
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test('pages::documents.index')
+            ->call('previewDocument', $document->id);
+
+        $component->assertSet('previewingDocumentId', $document->id);
+        $component->assertSet('previewFilename', $document->original_filename);
+
+        $previewContent = $component->get('previewContent');
+        $this->assertStringContainsString('Първи чънк текст.', $previewContent);
+        $this->assertStringContainsString('Втори чънк текст.', $previewContent);
+    }
+
+    public function test_preview_shows_message_when_no_chunks(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $document = Document::factory()->create([
+            'uploaded_by' => $admin->id,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test('pages::documents.index')
+            ->call('previewDocument', $document->id);
+
+        $previewContent = $component->get('previewContent');
+        $this->assertNotEmpty($previewContent);
+    }
+
+    public function test_close_preview_resets_state(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $document = Document::factory()->create([
+            'uploaded_by' => $admin->id,
+        ]);
+
+        Livewire::actingAs($admin)
+            ->test('pages::documents.index')
+            ->call('previewDocument', $document->id)
+            ->assertSet('previewingDocumentId', $document->id)
+            ->call('closePreview')
+            ->assertSet('previewingDocumentId', null)
+            ->assertSet('previewContent', null);
     }
 }
