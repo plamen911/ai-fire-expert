@@ -4,7 +4,7 @@ An AI assistant for generating forensic fire investigation reports (*Съдеб�
 
 ## Overview
 
-Administrators populate the knowledge base by uploading reference documents (DOCX, PDF, TXT). The AI agent retrieves relevant context via semantic and keyword search, then reranks the merged results by relevance to select the top matches as context for generating structured forensic reports through a conversational interface.
+Administrators populate the knowledge base by uploading reference documents (DOCX, PDF, TXT). The AI agent retrieves relevant context via semantic and keyword search, then reranks the merged results by relevance to select the top matches as context for generating structured forensic reports through a conversational interface. AI inference is offloaded to external APIs (Groq, OpenAI, Cohere), so the server only runs the web stack.
 
 ## Key Features
 
@@ -70,6 +70,19 @@ COHERE_API_KEY=your-key
 ```
 
 The application is accessible at `http://localhost`.
+
+## Deployment
+
+**Recommended:** DigitalOcean Droplet, Frankfurt (fra1), Ubuntu 24.04 — $6/mo (1 GB RAM, 1 vCPU, 25 GB disk).
+
+PostgreSQL + pgvector, Redis, and PHP-FPM exceed 512 MB even without Docker overhead.
+
+**Production tips:**
+
+- Remove the pgAdmin service from `docker-compose.yml` (or use a separate `docker-compose.prod.yml`) to free ~512 MB RAM
+- Set `APP_ENV=production`, `APP_DEBUG=false`, and run `php artisan config:cache`, `route:cache`, `view:cache`
+- Configure a firewall to expose only ports 80/443
+- Use Let's Encrypt (Certbot) for free HTTPS
 
 ## Docker Services
 
