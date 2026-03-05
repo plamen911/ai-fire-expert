@@ -195,7 +195,7 @@ class extends Component {
     }
 }; ?>
 
-<div class="mx-auto w-full max-w-4xl space-y-6 p-6"
+<div class="w-full space-y-6 p-6"
      @if($hasProcessing) wire:poll.3s @endif>
 
     <flux:heading size="xl">{{ __('Knowledge base') }}</flux:heading>

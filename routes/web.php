@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Route;
 
-Route::view('/', 'welcome')->name('home');
+Route::redirect('/', '/dashboard')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::view('dashboard', 'dashboard')->name('dashboard');
+    Route::livewire('dashboard', 'pages::dashboard.index')->name('dashboard');
     Route::livewire('chat/history', 'pages::chat.history')->name('chat.history');
     Route::livewire('chat/{conversationId?}', 'pages::chat.index')->name('chat.index');
     Route::livewire('documents', 'pages::documents.index')->name('documents.index');

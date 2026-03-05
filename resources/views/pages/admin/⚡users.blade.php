@@ -33,7 +33,7 @@ new #[Title('Users')] class extends Component {
     }
 }; ?>
 
-<div class="mx-auto w-full max-w-4xl space-y-6 p-6">
+<div class="mx-auto w-full space-y-6 p-6">
         <flux:heading size="xl">{{ __('Users') }}</flux:heading>
 
         @error('role')

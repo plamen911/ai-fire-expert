@@ -183,5 +183,12 @@
     "You cannot change your own role.": "Не можете да промените собствената си роля.",
     "Role": "Роля",
     "Registration": "Регистрация",
-    "An error occurred while communicating with the AI service. Please try again.": "Възникна грешка при комуникацията с AI услугата. Моля, опитайте отново."
+    "An error occurred while communicating with the AI service. Please try again.": "Възникна грешка при комуникацията с AI услугата. Моля, опитайте отново.",
+
+    "My conversations": "Моите разговори",
+    "Starred": "Отбелязани",
+    "Feedback": "Обратна връзка",
+    "System overview": "Системен преглед",
+    "All conversations": "Всички разговори",
+    "Feedback sentiment": "Оценка на обратната връзка"
 }

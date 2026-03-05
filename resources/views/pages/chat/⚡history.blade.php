@@ -128,7 +128,7 @@ new #[Title('Conversation history')] class extends Component {
     }
 }; ?>
 
-<div class="mx-auto w-full max-w-4xl space-y-6 p-6"
+<div class="w-full space-y-6 p-6"
      @keydown.window="
         if (($event.ctrlKey || $event.metaKey) && $event.key === 'n') { $event.preventDefault(); window.location.href = '{{ route('chat.index') }}'; }
         if ($event.key === 'Escape') { $wire.cancelDelete(); }
