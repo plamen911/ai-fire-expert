@@ -11,6 +11,7 @@ Administrators populate the knowledge base by uploading reference documents (DOC
 - **Conversational AI chat** — real-time streaming responses powered by Groq (primary) with OpenAI fallback
 - **RAG pipeline** — document ingestion, chunking, vector embeddings (pgvector), similarity search, and result reranking
 - **Report generation** — structured forensic reports with Markdown and PDF export
+- **Self-improving knowledge base** — generated reports are automatically saved back into the knowledge base, allowing the AI to reference its own prior work in future queries
 - **Knowledge base management** — admin upload, deduplication, preview, and deletion of reference documents
 - **Conversation history** — search, star, rename, export, and resume past conversations
 - **Conversation feedback** — per-message thumbs up/down rating
