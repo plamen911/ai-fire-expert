@@ -10,7 +10,6 @@ use App\Models\AgentConversation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ChatHistoryTest extends TestCase
@@ -21,8 +20,7 @@ class ChatHistoryTest extends TestCase
     {
         parent::setUp();
 
-        Role::findOrCreate('admin', 'web');
-        Role::findOrCreate('user', 'web');
+        $this->createRoles();
     }
 
     public function test_guests_are_redirected_from_history_page(): void

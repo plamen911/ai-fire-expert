@@ -10,7 +10,6 @@ use App\Models\ConversationFeedback;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ConversationFeedbackTest extends TestCase
@@ -21,7 +20,7 @@ class ConversationFeedbackTest extends TestCase
     {
         parent::setUp();
 
-        Role::findOrCreate('user', 'web');
+        $this->createRoles();
     }
 
     public function test_user_can_submit_positive_feedback(): void

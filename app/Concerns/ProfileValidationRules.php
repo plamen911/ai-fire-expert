@@ -34,11 +34,6 @@ trait ProfileValidationRules
     }
 
     /**
-     * Get the validation rules used to validate user emails.
-     *
-     * @return array<int, \Illuminate\Contracts\Validation\Rule|array|string>
-     */
-    /**
      * Get the validation rules used to validate user positions.
      *
      * @return array<int, \Illuminate\Contracts\Validation\Rule|array|string>

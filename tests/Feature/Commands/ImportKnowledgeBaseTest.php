@@ -7,7 +7,6 @@ namespace Tests\Feature\Commands;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ImportKnowledgeBaseTest extends TestCase
@@ -18,8 +17,7 @@ class ImportKnowledgeBaseTest extends TestCase
     {
         parent::setUp();
 
-        Role::findOrCreate('admin', 'web');
-        Role::findOrCreate('user', 'web');
+        $this->createRoles();
     }
 
     public function test_it_fails_when_no_admin_user_exists(): void

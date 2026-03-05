@@ -14,7 +14,6 @@ use Laravel\Ai\Exceptions\RateLimitedException;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ChatTest extends TestCase
@@ -25,8 +24,7 @@ class ChatTest extends TestCase
     {
         parent::setUp();
 
-        Role::findOrCreate('admin', 'web');
-        Role::findOrCreate('user', 'web');
+        $this->createRoles();
     }
 
     public function test_guests_are_redirected(): void
@@ -284,7 +282,7 @@ class ChatTest extends TestCase
     public function test_send_message_recovers_gracefully_on_api_error(): void
     {
         ForensicFireExpert::fake(function (): never {
-            throw new \RuntimeException('Connection refused for URI https://api.anthropic.com/v1/messages');
+            throw new \RuntimeException('Connection refused for URI https://api.groq.com/v1/messages');
         });
 
         $user = User::factory()->create();
@@ -315,7 +313,7 @@ class ChatTest extends TestCase
             $callCount++;
 
             if ($callCount === 1) {
-                throw RateLimitedException::forProvider('anthropic');
+                throw RateLimitedException::forProvider('groq');
             }
 
             return 'Fallback response from OpenAI';

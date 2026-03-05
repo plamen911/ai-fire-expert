@@ -107,20 +107,12 @@ class extends Component {
         } catch (FailoverableException $e) {
             report($e);
 
-            $fallbacks = [
-                [Lab::Gemini, 'gemini-2.0-flash'],
-                [Lab::OpenAI, 'gpt-4o-mini'],
-            ];
-
             $fullText = null;
 
-            foreach ($fallbacks as [$fallbackProvider, $fallbackModel]) {
-                try {
-                    $fullText = (string) $agent->prompt($userMessage, provider: $fallbackProvider, model: $fallbackModel);
-                    break;
-                } catch (\Throwable $inner) {
-                    report($inner);
-                }
+            try {
+                $fullText = (string) $agent->prompt($userMessage, provider: Lab::OpenAI, model: 'gpt-4o-mini');
+            } catch (\Throwable $inner) {
+                report($inner);
             }
 
             if ($fullText === null) {

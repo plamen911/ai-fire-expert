@@ -7,7 +7,6 @@ namespace Tests\Feature\Livewire;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class AdminUsersTest extends TestCase
@@ -18,8 +17,7 @@ class AdminUsersTest extends TestCase
     {
         parent::setUp();
 
-        Role::findOrCreate('admin', 'web');
-        Role::findOrCreate('user', 'web');
+        $this->createRoles();
     }
 
     public function test_guests_are_redirected(): void

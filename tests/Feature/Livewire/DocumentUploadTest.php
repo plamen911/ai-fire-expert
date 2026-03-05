@@ -14,7 +14,6 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class DocumentUploadTest extends TestCase
@@ -25,8 +24,7 @@ class DocumentUploadTest extends TestCase
     {
         parent::setUp();
 
-        Role::findOrCreate('admin', 'web');
-        Role::findOrCreate('user', 'web');
+        $this->createRoles();
     }
 
     public function test_guests_are_redirected(): void

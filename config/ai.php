@@ -16,7 +16,7 @@ return [
     */
 
     'default' => 'openai',
-    'default_for_images' => 'gemini',
+    'default_for_images' => 'openai',
     'default_for_audio' => 'openai',
     'default_for_transcription' => 'openai',
     'default_for_embeddings' => 'openai',
@@ -52,11 +52,6 @@ return [
     */
 
     'providers' => [
-        'anthropic' => [
-            'driver' => 'anthropic',
-            'key' => env('ANTHROPIC_API_KEY'),
-        ],
-
         'azure' => [
             'driver' => 'azure',
             'key' => env('AZURE_OPENAI_API_KEY'),
@@ -79,11 +74,6 @@ return [
         'eleven' => [
             'driver' => 'eleven',
             'key' => env('ELEVENLABS_API_KEY'),
-        ],
-
-        'gemini' => [
-            'driver' => 'gemini',
-            'key' => env('GEMINI_API_KEY'),
         ],
 
         'groq' => [

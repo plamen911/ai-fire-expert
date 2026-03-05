@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Services\DocumentProcessor;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
-use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class ProcessDocumentTest extends TestCase
@@ -22,8 +21,7 @@ class ProcessDocumentTest extends TestCase
     {
         parent::setUp();
 
-        Role::findOrCreate('admin', 'web');
-        Role::findOrCreate('user', 'web');
+        $this->createRoles();
     }
 
     public function test_document_status_transitions_to_completed(): void

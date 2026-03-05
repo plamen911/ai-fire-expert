@@ -21,7 +21,7 @@ use App\Ai\Tools\ReportTemplate;
 use Laravel\Ai\Tools\SimilaritySearch;
 
 #[Provider(Lab::Groq)]
-#[Model('llama-3.3-70b-versatile')]
+#[Model('qwen/qwen3-32b')]
 #[MaxTokens(8000)]
 #[MaxSteps(4)]
 #[Timeout(120)]
