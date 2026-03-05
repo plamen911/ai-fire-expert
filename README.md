@@ -4,7 +4,7 @@ An AI assistant for generating forensic fire investigation reports (*Съдеб�
 
 ## Overview
 
-Administrators populate the knowledge base by uploading reference documents (DOCX, PDF, TXT). The AI agent retrieves relevant context via semantic and keyword search, then assists users in drafting structured forensic reports through a conversational interface.
+Administrators populate the knowledge base by uploading reference documents (DOCX, PDF, TXT). The AI agent retrieves relevant context via semantic and keyword search, then reranks the merged results by relevance to select the top matches as context for generating structured forensic reports through a conversational interface.
 
 ## Key Features
 
@@ -36,7 +36,7 @@ Administrators populate the knowledge base by uploading reference documents (DOC
 - Docker & Docker Compose
 - Groq API key
 - OpenAI API key
-- Cohere API key (for reranking — re-scores merged search results by relevance, selecting the top matches to pass as context to the AI agent)
+- Cohere API key (for reranking)
 
 ## Getting Started
 
