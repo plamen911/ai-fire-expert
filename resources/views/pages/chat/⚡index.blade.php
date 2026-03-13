@@ -8,6 +8,7 @@ use App\Models\ConversationFeedback;
 use App\Services\DocumentProcessor;
 use App\Services\ReportParser;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Exceptions\FailoverableException;
@@ -57,12 +58,7 @@ class extends Component {
         }
 
         $this->conversationId = $agent->currentConversation();
-        foreach ($agent->messages() as $msg) {
-            $this->chatMessages[] = [
-                'role' => $msg->role->value ?? $msg->role,
-                'content' => $msg->content ?? '',
-            ];
-        }
+        $this->loadAllMessages();
 
         $this->restoreReportFromMessages();
         $this->loadFeedback();
@@ -167,9 +163,9 @@ class extends Component {
 
             $this->reportContent = $report['content'];
             $this->reportFilename = $report['filename'];
+            session(['report_content' => $report['content'], 'report_filename' => $report['filename']]);
 
             $lastIndex = array_key_last($this->chatMessages);
-            $this->chatMessages[$lastIndex]['content'] = __('The report has been generated successfully.');
             $this->chatMessages[$lastIndex]['is_report'] = true;
 
             // Auto-save to knowledge base (async) — the system learns from every generated expertise
@@ -244,13 +240,7 @@ class extends Component {
             ->continue($conversationId, Auth::user());
 
         $this->conversationId = $agent->currentConversation();
-
-        foreach ($agent->messages() as $msg) {
-            $this->chatMessages[] = [
-                'role' => $msg->role->value ?? $msg->role,
-                'content' => $msg->content ?? '',
-            ];
-        }
+        $this->loadAllMessages();
 
         $this->restoreReportFromMessages();
         $this->loadFeedback();
@@ -314,19 +304,20 @@ class extends Component {
 
     public function downloadReport(): StreamedResponse
     {
-        $filename = $this->reportFilename ?? 'Ekspertiza.md';
+        $report = $this->resolveReportContent();
 
-        return response()->streamDownload(function (): void {
-            echo $this->reportContent;
-        }, $filename, [
+        return response()->streamDownload(function () use ($report): void {
+            echo $report['content'];
+        }, $report['filename'], [
             'Content-Type' => 'text/markdown',
         ]);
     }
 
     public function downloadReportPdf(): StreamedResponse
     {
-        $html = \Illuminate\Support\Str::markdown($this->reportContent ?? '');
-        $filename = str_replace('.md', '.pdf', $this->reportFilename ?? 'Ekspertiza.pdf');
+        $report = $this->resolveReportContent();
+        $html = \Illuminate\Support\Str::markdown($report['content']);
+        $filename = str_replace('.md', '.pdf', $report['filename']);
 
         $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadHTML(
             '<html><head><meta charset="UTF-8"><style>body { font-family: DejaVu Sans, sans-serif; font-size: 12px; }</style></head><body>' . $html . '</body></html>'
@@ -356,6 +347,67 @@ class extends Component {
         }
     }
 
+    private function loadAllMessages(): void
+    {
+        $this->chatMessages = [];
+
+        if (! $this->conversationId) {
+            return;
+        }
+
+        $messages = DB::table('agent_conversation_messages')
+            ->where('conversation_id', $this->conversationId)
+            ->whereIn('role', ['user', 'assistant'])
+            ->orderBy('id')
+            ->get(['role', 'content']);
+
+        foreach ($messages as $msg) {
+            if (empty($msg->content)) {
+                continue;
+            }
+
+            $this->chatMessages[] = [
+                'role' => $msg->role,
+                'content' => $msg->content,
+            ];
+        }
+    }
+
+    /**
+     * @return array{content: string, filename: string}
+     */
+    private function resolveReportContent(): array
+    {
+        // 1. Try Livewire property (available when report was just generated)
+        if (! empty($this->reportContent)) {
+            return [
+                'content' => $this->reportContent,
+                'filename' => $this->reportFilename ?: 'Ekspertiza.md',
+            ];
+        }
+
+        // 2. Re-parse from the database (reliable fallback — survives hydration)
+        if ($this->conversationId) {
+            $parser = app(ReportParser::class);
+
+            $messages = DB::table('agent_conversation_messages')
+                ->where('conversation_id', $this->conversationId)
+                ->where('role', 'assistant')
+                ->orderBy('id')
+                ->pluck('content');
+
+            foreach ($messages as $content) {
+                $report = $parser->parse($content);
+
+                if ($report) {
+                    return $report;
+                }
+            }
+        }
+
+        return ['content' => '', 'filename' => 'Ekspertiza.md'];
+    }
+
     private function restoreReportFromMessages(): void
     {
         $parser = app(ReportParser::class);
@@ -370,7 +422,7 @@ class extends Component {
             if ($report) {
                 $this->reportContent = $report['content'];
                 $this->reportFilename = $report['filename'];
-                $this->chatMessages[$index]['content'] = __('The report has been generated successfully.');
+                session(['report_content' => $report['content'], 'report_filename' => $report['filename']]);
                 $this->chatMessages[$index]['is_report'] = true;
                 break;
             }

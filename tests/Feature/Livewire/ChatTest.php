@@ -10,6 +10,8 @@ use App\Jobs\ProcessDocument;
 use App\Models\AgentConversation;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Laravel\Ai\Exceptions\RateLimitedException;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -105,7 +107,7 @@ class ChatTest extends TestCase
         $chatMessages = $component->get('chatMessages');
         $lastMessage = end($chatMessages);
 
-        $this->assertEquals('Експертизата е генерирана успешно.', $lastMessage['content']);
+        $this->assertStringContainsString('REPORT_START', $lastMessage['content']);
         $this->assertTrue($lastMessage['is_report']);
     }
 
@@ -429,6 +431,106 @@ class ChatTest extends TestCase
         $this->assertEquals('user', $lastTwo[0]['role']);
         $this->assertEquals('assistant', $lastTwo[1]['role']);
         $this->assertStringContainsString('късо съединение', $lastTwo[1]['content']);
+    }
+
+    public function test_conversation_summary_includes_older_user_messages(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create(['title' => 'Пожар в склад']);
+
+        // Insert 6 message pairs (12 total) — older messages that exceed the 4-message window
+        for ($i = 1; $i <= 6; $i++) {
+            $this->insertConversationMessage($conversation->id, $user->id, 'user', "Потребителско съобщение {$i}");
+            $this->insertConversationMessage($conversation->id, $user->id, 'assistant', "Отговор на AI {$i}");
+        }
+
+        $agent = new ForensicFireExpert;
+        $agent->continue($conversation->id, as: $user);
+
+        $instructions = $agent->instructions();
+
+        // Older user messages (outside the 4-message window) should be in the summary
+        $this->assertStringContainsString('Вече събрана информация от потребителя', $instructions);
+        $this->assertStringContainsString('Потребителско съобщение 1', $instructions);
+        $this->assertStringContainsString('Потребителско съобщение 2', $instructions);
+
+        // The last 4 messages (assistant 6, user 6, assistant 5, user 5) are in the window — user 5 & 6 should NOT be in summary
+        $this->assertStringNotContainsString('Потребителско съобщение 6', $instructions);
+    }
+
+    public function test_conversation_summary_excludes_assistant_messages(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create(['title' => 'Пожар в склад']);
+
+        for ($i = 1; $i <= 6; $i++) {
+            $this->insertConversationMessage($conversation->id, $user->id, 'user', "Потребителско съобщение {$i}");
+            $this->insertConversationMessage($conversation->id, $user->id, 'assistant', "Отговор на AI {$i}");
+        }
+
+        $agent = new ForensicFireExpert;
+        $agent->continue($conversation->id, as: $user);
+
+        $instructions = $agent->instructions();
+
+        // Assistant messages should never appear in the summary
+        $this->assertStringNotContainsString('Отговор на AI 1', $instructions);
+        $this->assertStringNotContainsString('Отговор на AI 2', $instructions);
+    }
+
+    public function test_conversation_summary_empty_when_few_messages(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $conversation = AgentConversation::factory()->for($user)->create(['title' => 'Пожар в склад']);
+
+        // Only 2 messages — within the 4-message window, so no summary needed
+        $this->insertConversationMessage($conversation->id, $user->id, 'user', 'Здравейте');
+        $this->insertConversationMessage($conversation->id, $user->id, 'assistant', 'Здравейте, как мога да помогна?');
+
+        $agent = new ForensicFireExpert;
+        $agent->continue($conversation->id, as: $user);
+
+        $instructions = $agent->instructions();
+
+        $this->assertStringNotContainsString('Вече събрана информация от потребителя', $instructions);
+    }
+
+    public function test_conversation_summary_empty_without_conversation(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $agent = new ForensicFireExpert;
+        $agent->forUser($user);
+
+        $instructions = $agent->instructions();
+
+        $this->assertStringNotContainsString('Вече събрана информация от потребителя', $instructions);
+    }
+
+    private function insertConversationMessage(string $conversationId, int $userId, string $role, string $content): void
+    {
+        DB::table('agent_conversation_messages')->insert([
+            'id' => (string) Str::uuid7(),
+            'conversation_id' => $conversationId,
+            'user_id' => $userId,
+            'agent' => ForensicFireExpert::class,
+            'role' => $role,
+            'content' => $content,
+            'attachments' => '[]',
+            'tool_calls' => '[]',
+            'tool_results' => '[]',
+            'usage' => '[]',
+            'meta' => '[]',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     public function test_new_chat_creates_new_conversation(): void

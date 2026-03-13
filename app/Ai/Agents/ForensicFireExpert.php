@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\ReportTemplate;
 use App\Models\DocumentChunk;
 use App\Services\QueryExpander;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Laravel\Ai\Attributes\MaxSteps;
 use Laravel\Ai\Attributes\MaxTokens;
 use Laravel\Ai\Attributes\Model;
@@ -17,11 +20,10 @@ use Laravel\Ai\Contracts\Conversational;
 use Laravel\Ai\Contracts\HasTools;
 use Laravel\Ai\Enums\Lab;
 use Laravel\Ai\Promptable;
-use App\Ai\Tools\ReportTemplate;
 use Laravel\Ai\Tools\SimilaritySearch;
 
-#[Provider(Lab::Groq)]
-#[Model('qwen/qwen3-32b')]
+#[Provider(Lab::OpenAI)]
+#[Model('gpt-5-mini')]
 #[MaxTokens(8000)]
 #[MaxSteps(4)]
 #[Timeout(120)]
@@ -33,11 +35,19 @@ class ForensicFireExpert implements Agent, Conversational, HasTools
     {
         $user = $this->conversationParticipant();
 
-        return str_replace(
+        $basePrompt = str_replace(
             ['{{EXPERT_NAME}}', '{{EXPERT_POSITION}}'],
             [$user?->name ?? 'Непознат', $user?->position ?? ''],
             file_get_contents(resource_path('prompts/forensic-fire-expert.md'))
         );
+
+        $summary = $this->buildConversationSummary();
+
+        if ($summary !== '') {
+            $basePrompt .= "\n\n".$summary;
+        }
+
+        return $basePrompt;
     }
 
     protected function maxConversationMessages(): int
@@ -85,5 +95,40 @@ class ForensicFireExpert implements Agent, Conversational, HasTools
             }),
             new ReportTemplate,
         ];
+    }
+
+    private function buildConversationSummary(): string
+    {
+        if (! $this->conversationId) {
+            return '';
+        }
+
+        $windowIds = DB::table('agent_conversation_messages')
+            ->where('conversation_id', $this->conversationId)
+            ->orderByDesc('id')
+            ->limit($this->maxConversationMessages())
+            ->pluck('id');
+
+        $olderUserMessages = DB::table('agent_conversation_messages')
+            ->where('conversation_id', $this->conversationId)
+            ->whereNotIn('id', $windowIds)
+            ->where('role', 'user')
+            ->orderBy('id')
+            ->pluck('content')
+            ->filter(fn ($c) => ! empty(trim($c)));
+
+        if ($olderUserMessages->isEmpty()) {
+            return '';
+        }
+
+        $lines = $olderUserMessages
+            ->map(fn ($content) => '- '.Str::limit(trim($content), 500))
+            ->implode("\n");
+
+        return "## Вече събрана информация от потребителя\n"
+            ."По-долу са отговорите на потребителя от по-ранните етапи на разговора. "
+            ."НЕ задавай отново въпроси, на които вече е отговорено. "
+            ."Използвай тази информация като вече установени факти по случая.\n\n"
+            .$lines;
     }
 }
