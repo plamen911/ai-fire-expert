@@ -1,0 +1,117 @@
+FROM php:8.5-fpm-alpine
+
+# Force UTC as server time
+RUN echo "UTC" > /etc/timezone
+
+# Setup bzip2 extension
+RUN apk add --no-cache bzip2-dev \
+    && docker-php-ext-install -j$(nproc) bz2 \
+    && docker-php-ext-enable bz2 \
+    && rm -rf /tmp/*
+
+# Setup zip extension
+RUN apk add --no-cache libzip-dev zip \
+    && docker-php-ext-install zip
+
+# Install supervisor
+RUN apk add --no-cache supervisor \
+    && mkdir -p /var/log/supervisor
+
+COPY deploy/supervisor/supervisord.conf /etc/supervisord.conf
+
+# Setup GD extension
+RUN apk add --no-cache \
+      freetype libjpeg-turbo libpng \
+      freetype-dev libjpeg-turbo-dev libpng-dev \
+    && docker-php-ext-configure gd \
+      --with-freetype=/usr/include/ \
+      --with-jpeg=/usr/include/ \
+    && docker-php-ext-install -j$(nproc) gd \
+    && docker-php-ext-enable gd \
+    && apk del --no-cache freetype-dev libjpeg-turbo-dev libpng-dev \
+    && rm -rf /tmp/*
+
+RUN apk add bash
+
+# PostgreSQL extensions
+RUN apk add --no-cache postgresql-dev \
+    && docker-php-ext-install pdo_pgsql pgsql
+
+# mbstring extension
+RUN apk add --no-cache oniguruma-dev \
+    && docker-php-ext-install mbstring \
+    && docker-php-ext-enable mbstring \
+    && rm -rf /tmp/*
+
+# pcntl and bcmath
+RUN docker-php-ext-install pcntl bcmath
+
+# Redis + APCu via pecl
+RUN set -xe \
+    && apk add --no-cache --virtual .phpize_deps $PHPIZE_DEPS \
+    && sed -i 's/^exec $PHP -C -n/exec $PHP -C/g' $(which pecl) \
+    && pecl install apcu redis \
+    && docker-php-ext-enable redis \
+    && apk del .phpize_deps
+
+# OPcache for production performance
+RUN docker-php-ext-install opcache
+
+# PHP production configuration
+RUN echo "memory_limit=512M" > $PHP_INI_DIR/conf.d/memory-limit.ini \
+    && echo "max_execution_time=300" >> $PHP_INI_DIR/conf.d/memory-limit.ini \
+    && echo "post_max_size=20M" >> $PHP_INI_DIR/conf.d/memory-limit.ini \
+    && echo "upload_max_filesize=20M" >> $PHP_INI_DIR/conf.d/memory-limit.ini
+
+RUN echo "extension=apcu.so" > $PHP_INI_DIR/conf.d/apcu.ini
+RUN echo "date.timezone=${PHP_TIMEZONE:-UTC}" > $PHP_INI_DIR/conf.d/date_timezone.ini
+RUN echo "display_errors=Off" > $PHP_INI_DIR/conf.d/display-errors.ini
+RUN echo "log_errors=On" >> $PHP_INI_DIR/conf.d/display-errors.ini
+RUN echo "error_log=/var/log/php-errors.log" >> $PHP_INI_DIR/conf.d/display-errors.ini
+RUN echo "cgi.fix_pathinfo=0" > $PHP_INI_DIR/conf.d/path-info.ini
+RUN echo "expose_php=0" >> $PHP_INI_DIR/conf.d/path-info.ini
+
+# OPcache production settings
+RUN echo "opcache.enable=1" > $PHP_INI_DIR/conf.d/opcache.ini \
+    && echo "opcache.memory_consumption=128" >> $PHP_INI_DIR/conf.d/opcache.ini \
+    && echo "opcache.interned_strings_buffer=8" >> $PHP_INI_DIR/conf.d/opcache.ini \
+    && echo "opcache.max_accelerated_files=10000" >> $PHP_INI_DIR/conf.d/opcache.ini \
+    && echo "opcache.validate_timestamps=0" >> $PHP_INI_DIR/conf.d/opcache.ini \
+    && echo "opcache.save_comments=1" >> $PHP_INI_DIR/conf.d/opcache.ini
+
+ADD . /var/www/html
+WORKDIR /var/www/html
+
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+RUN mkdir -p /var/www/html/storage/logs \
+    /var/www/html/storage/bootstrap \
+    /var/www/html/storage/app \
+    /var/www/html/bootstrap/cache \
+    /var/www/html/storage/framework \
+    /var/www/html/storage/framework/sessions \
+    /var/www/html/storage/framework/views \
+    /var/www/html/storage/framework/cache
+
+RUN chmod -R 775 /var/www/html/storage \
+    && chmod -R 775 /var/www/html/bootstrap/cache \
+    && chmod -R 777 /var/www/html/storage/framework/cache \
+    && chmod -R 777 /var/www/html/storage/framework/sessions \
+    && chmod -R 777 /var/www/html/storage/framework/views
+
+RUN touch /var/www/html/storage/logs/laravel.log \
+    && chmod 777 /var/www/html/storage/logs/laravel.log
+
+RUN chown -R www-data:www-data /var/www/html/storage \
+    && chown -R www-data:www-data /var/www/html/bootstrap/cache
+
+RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Build frontend assets
+RUN apk add --no-cache nodejs npm \
+    && npm ci --no-audit \
+    && npm run build \
+    && apk del nodejs npm \
+    && rm -rf node_modules
+
+CMD ["/bin/sh", "-c", "php artisan optimize:clear && supervisord -c /etc/supervisord.conf"]

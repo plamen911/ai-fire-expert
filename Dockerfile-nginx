@@ -1,8 +1,10 @@
 FROM nginx:1.25-alpine
 
+ARG NGINX_CONF=deploy/nginx/default.conf
+
 # Copy nginx configuration files
 COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
-COPY deploy/nginx/default.conf /etc/nginx/conf.d/default.conf
+COPY ${NGINX_CONF} /etc/nginx/conf.d/default.conf
 
 # Install curl for health checks
 RUN apk add --no-cache curl
@@ -11,7 +13,7 @@ RUN apk add --no-cache curl
 RUN chown -R nginx:nginx /var/cache/nginx /var/log/nginx /etc/nginx/conf.d
 
 # Expose ports
-EXPOSE 80
+EXPOSE 80 443
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
