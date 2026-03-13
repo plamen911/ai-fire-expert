@@ -24,7 +24,7 @@ use Laravel\Ai\Tools\SimilaritySearch;
 
 #[Provider(Lab::OpenAI)]
 #[Model('gpt-5-mini')]
-#[MaxTokens(8000)]
+#[MaxTokens(16000)]
 #[MaxSteps(4)]
 #[Timeout(120)]
 class ForensicFireExpert implements Agent, Conversational, HasTools

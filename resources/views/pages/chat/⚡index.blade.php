@@ -378,15 +378,7 @@ class extends Component {
      */
     private function resolveReportContent(): array
     {
-        // 1. Try Livewire property (available when report was just generated)
-        if (! empty($this->reportContent)) {
-            return [
-                'content' => $this->reportContent,
-                'filename' => $this->reportFilename ?: 'Ekspertiza.md',
-            ];
-        }
-
-        // 2. Re-parse from the database (reliable fallback — survives hydration)
+        // 1. Always prefer the database (source of truth — survives Livewire hydration)
         if ($this->conversationId) {
             $parser = app(ReportParser::class);
 
@@ -403,6 +395,14 @@ class extends Component {
                     return $report;
                 }
             }
+        }
+
+        // 2. Fallback to Livewire property (available when report was just generated)
+        if (! empty($this->reportContent)) {
+            return [
+                'content' => $this->reportContent,
+                'filename' => $this->reportFilename ?: 'Ekspertiza.md',
+            ];
         }
 
         return ['content' => '', 'filename' => 'Ekspertiza.md'];
