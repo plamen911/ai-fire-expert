@@ -9,6 +9,7 @@ services:
       - .env.production
     volumes:
       - app_storage:/var/www/html/storage
+      - app_public:/var/www/html/public
     depends_on:
       postgres:
         condition: service_healthy
@@ -39,6 +40,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
+      - app_public:/var/www/html/public:ro
       - app_storage:/var/www/html/storage:ro
       - certbot_etc:/etc/letsencrypt:ro
       - certbot_var:/var/lib/letsencrypt
@@ -102,6 +104,7 @@ services:
 volumes:
   pgdata:
   app_storage:
+  app_public:
   certbot_etc:
   certbot_var:
 

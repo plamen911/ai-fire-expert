@@ -18,7 +18,7 @@ if [ -z "${DOMAIN}" ]; then
 fi
 
 echo "==> Obtaining SSL certificate for ${DOMAIN}..."
-docker compose -f "${COMPOSE_FILE}" run --rm certbot certonly \
+docker compose --env-file .env.production -f "${COMPOSE_FILE}" run --rm certbot certonly \
     --webroot \
     --webroot-path=/var/lib/letsencrypt \
     -d "${DOMAIN}" \
@@ -125,8 +125,8 @@ server {
 NGINXEOF
 
 echo "==> Rebuilding and restarting nginx with SSL..."
-docker compose -f "${COMPOSE_FILE}" build nginx
-docker compose -f "${COMPOSE_FILE}" up -d nginx
+docker compose --env-file .env.production -f "${COMPOSE_FILE}" build nginx
+docker compose --env-file .env.production -f "${COMPOSE_FILE}" up -d nginx
 
 echo "==> Updating APP_URL in .env.production..."
 sed -i "s|^APP_URL=.*|APP_URL=https://${DOMAIN}|" .env.production

@@ -9,6 +9,18 @@
 
 set -euo pipefail
 
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+    echo "Usage: bash deploy/deploy.sh [--fresh]"
+    echo ""
+    echo "Options:"
+    echo "  --fresh   Run fresh migrations (drops all tables!)"
+    echo ""
+    echo "Environment variables:"
+    echo "  DOMAIN    Set to your domain to auto-configure SSL"
+    echo "            Example: DOMAIN=example.com bash deploy/deploy.sh"
+    exit 0
+fi
+
 DOMAIN="${DOMAIN:-}"
 FRESH_MIGRATE=false
 
@@ -38,11 +50,25 @@ echo "==> Pulling latest code..."
 git pull origin main 2>/dev/null || echo "    (Skipping git pull — not a git repo or no remote)"
 
 echo "==> Building and starting containers..."
-docker compose -f "${COMPOSE_FILE}" build --no-cache
-docker compose -f "${COMPOSE_FILE}" up -d
+docker compose --env-file .env.production -f "${COMPOSE_FILE}" build --no-cache
+docker compose --env-file .env.production -f "${COMPOSE_FILE}" up -d
 
 echo "==> Waiting for services to be healthy..."
-sleep 10
+MAX_WAIT=60
+WAITED=0
+while [ $WAITED -lt $MAX_WAIT ]; do
+    if docker exec "${APP_CONTAINER}" kill -0 1 2>/dev/null && \
+       docker exec laravel_rag_postgres pg_isready -q 2>/dev/null && \
+       docker exec laravel_rag_redis redis-cli ping 2>/dev/null | grep -q PONG; then
+        echo "    All services healthy."
+        break
+    fi
+    sleep 2
+    WAITED=$((WAITED + 2))
+done
+if [ $WAITED -ge $MAX_WAIT ]; then
+    echo "WARNING: Services may not be fully healthy after ${MAX_WAIT}s. Continuing anyway..."
+fi
 
 echo "==> Running migrations..."
 if [ "$FRESH_MIGRATE" = true ]; then
@@ -62,7 +88,7 @@ if [ -n "${DOMAIN}" ]; then
 
     # Check if certificate already exists
     if [ ! -d "/etc/letsencrypt/live/${DOMAIN}" ]; then
-        docker compose -f "${COMPOSE_FILE}" run --rm certbot certonly \
+        docker compose --env-file .env.production -f "${COMPOSE_FILE}" run --rm certbot certonly \
             --webroot \
             --webroot-path=/var/lib/letsencrypt \
             -d "${DOMAIN}" \
@@ -71,7 +97,7 @@ if [ -n "${DOMAIN}" ]; then
             --no-eff-email
 
         echo "    SSL certificate obtained. Restarting nginx..."
-        docker compose -f "${COMPOSE_FILE}" restart nginx
+        docker compose --env-file .env.production -f "${COMPOSE_FILE}" restart nginx
     else
         echo "    SSL certificate already exists."
     fi
@@ -84,7 +110,7 @@ echo "============================================"
 echo ""
 
 # Show running containers
-docker compose -f "${COMPOSE_FILE}" ps
+docker compose --env-file .env.production -f "${COMPOSE_FILE}" ps
 
 echo ""
 if [ -n "${DOMAIN}" ]; then

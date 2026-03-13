@@ -49,6 +49,13 @@ if [ ! -f /swapfile ]; then
     echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
+echo "==> Hardening SSH..."
+# Disable password authentication and root login
+sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/^#*ChallengeResponseAuthentication.*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+systemctl restart ssh
+
 echo "==> Installing fail2ban..."
 apt install -y fail2ban
 systemctl enable fail2ban
@@ -57,6 +64,10 @@ systemctl start fail2ban
 echo "==> Setting up automatic security updates..."
 apt install -y unattended-upgrades
 dpkg-reconfigure -plow unattended-upgrades
+
+echo "==> Setting up daily database backup cron..."
+CRON_LINE="0 3 * * * cd ${APP_DIR} && bash deploy/backup-db.sh >> /var/log/laravel-rag-backup.log 2>&1"
+(crontab -u "${DEPLOY_USER}" -l 2>/dev/null | grep -v 'backup-db.sh'; echo "${CRON_LINE}") | crontab -u "${DEPLOY_USER}" -
 
 echo ""
 echo "============================================"

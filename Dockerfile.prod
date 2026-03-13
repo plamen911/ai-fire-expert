@@ -54,9 +54,6 @@ RUN set -xe \
     && docker-php-ext-enable redis \
     && apk del .phpize_deps
 
-# OPcache for production performance
-RUN docker-php-ext-install opcache
-
 # PHP production configuration
 RUN echo "memory_limit=512M" > $PHP_INI_DIR/conf.d/memory-limit.ini \
     && echo "max_execution_time=300" >> $PHP_INI_DIR/conf.d/memory-limit.ini \
