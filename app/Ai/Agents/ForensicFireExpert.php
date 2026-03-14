@@ -33,13 +33,7 @@ class ForensicFireExpert implements Agent, Conversational, HasTools
 
     public function instructions(): string
     {
-        $user = $this->conversationParticipant();
-
-        $basePrompt = str_replace(
-            ['{{EXPERT_NAME}}', '{{EXPERT_POSITION}}'],
-            [$user?->name ?? 'Непознат', $user?->position ?? ''],
-            file_get_contents(resource_path('prompts/forensic-fire-expert.md'))
-        );
+        $basePrompt = file_get_contents(resource_path('prompts/forensic-fire-expert.md'));
 
         $summary = $this->buildConversationSummary();
 
