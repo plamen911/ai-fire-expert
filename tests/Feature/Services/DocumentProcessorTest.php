@@ -228,6 +228,29 @@ class DocumentProcessorTest extends TestCase
         @unlink($fullPath);
     }
 
+    public function test_extract_text_preserves_paragraph_boundaries_in_docx(): void
+    {
+        $phpWord = new PhpWord;
+        $section = $phpWord->addSection();
+        $section->addText('Първи параграф за пожара.');
+        $section->addText('Втори параграф за сградата.');
+        $section->addText('Трети параграф за инсталацията.');
+
+        $filePath = tempnam(sys_get_temp_dir(), 'test_docx_').'.docx';
+        $writer = \PhpOffice\PhpWord\IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($filePath);
+
+        $text = $this->processor->extractText($filePath);
+
+        // Paragraphs should be separated by double newlines
+        $this->assertStringContainsString("\n\n", $text);
+        $this->assertStringContainsString('Първи параграф', $text);
+        $this->assertStringContainsString('Втори параграф', $text);
+        $this->assertStringContainsString('Трети параграф', $text);
+
+        unlink($filePath);
+    }
+
     private function createTestDocx(string $content): string
     {
         $phpWord = new PhpWord;

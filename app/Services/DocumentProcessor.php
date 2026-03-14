@@ -26,7 +26,7 @@ class DocumentProcessor
 
         foreach ($phpWord->getSections() as $section) {
             foreach ($section->getElements() as $element) {
-                $text .= $this->extractElementText($element);
+                $text .= $this->extractElementText($element, true);
             }
         }
 
@@ -35,6 +35,8 @@ class DocumentProcessor
 
     /**
      * Extract plain text from a PDF file.
+     *
+     * @throws \Exception
      */
     public function extractTextFromPdf(string $filePath): string
     {
@@ -45,57 +47,31 @@ class DocumentProcessor
     }
 
     /**
-     * Split text into chunks of ~2400 chars with ~400 char overlap, splitting on sentence boundaries.
+     * Split text into chunks using recursive structure-aware splitting.
+     * For markdown: splits on headings first, then paragraphs, then sentences.
+     * For plain text: splits on double newlines, single newlines, then sentences.
      *
      * @return array<int, string>
      */
-    public function chunk(string $text): array
+    public function chunk(string $text, int $chunkSize = 2400, int $overlap = 400): array
     {
         if (empty(trim($text))) {
             return [];
         }
 
-        $sentences = preg_split('/(?<=[.!?])\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY);
+        $isMarkdown = (bool) preg_match('/^#{1,3}\s/m', $text);
 
-        if (empty($sentences)) {
-            return [trim($text)];
+        $separators = $isMarkdown
+            ? ["\n## ", "\n### ", "\n\n", "\n", 'sentence']
+            : ["\n\n", "\n", 'sentence'];
+
+        $rawChunks = $this->chunkRecursive($text, $separators, $chunkSize);
+
+        if ($isMarkdown) {
+            $rawChunks = $this->prependHeadingContext($text, $rawChunks);
         }
 
-        $chunks = [];
-        $currentChunk = '';
-        $chunkSize = 2400;
-        $overlap = 400;
-
-        foreach ($sentences as $sentence) {
-            $sentence = trim($sentence);
-            if ($sentence === '') {
-                continue;
-            }
-
-            if ($currentChunk === '') {
-                $currentChunk = $sentence;
-
-                continue;
-            }
-
-            $candidate = $currentChunk.' '.$sentence;
-
-            if (mb_strlen($candidate) <= $chunkSize) {
-                $currentChunk = $candidate;
-            } else {
-                $chunks[] = trim($currentChunk);
-
-                // Build overlap from the end of current chunk
-                $overlapText = $this->buildOverlap($currentChunk, $overlap);
-                $currentChunk = $overlapText.' '.$sentence;
-            }
-        }
-
-        if (trim($currentChunk) !== '') {
-            $chunks[] = trim($currentChunk);
-        }
-
-        return $chunks;
+        return $this->addOverlap($rawChunks, $overlap, $chunkSize);
     }
 
     /**
@@ -141,6 +117,9 @@ class DocumentProcessor
 
     /**
      * Process a document: extract text, chunk, embed, and store.
+     *
+     * @throws \Exception
+     * @throws FailoverableException
      */
     public function process(Document $document): void
     {
@@ -188,8 +167,9 @@ class DocumentProcessor
 
     /**
      * Recursively extract text from PhpWord elements.
+     * Top-level paragraph elements are separated by double newlines to preserve structure.
      */
-    private function extractElementText(mixed $element): string
+    private function extractElementText(mixed $element, bool $isTopLevel = false): string
     {
         $text = '';
 
@@ -212,11 +192,212 @@ class DocumentProcessor
             $text .= "\n";
         }
 
+        if ($isTopLevel && trim($text) !== '') {
+            $text = rtrim($text)."\n\n";
+        }
+
         return $text;
     }
 
     /**
-     * Get approximately $targetLength characters from the end of the text, respecting sentence boundaries.
+     * Recursively split text by a hierarchy of separators.
+     *
+     * @param  array<int, string>  $separators
+     * @return array<int, string>
+     */
+    private function chunkRecursive(string $text, array $separators, int $chunkSize): array
+    {
+        $text = trim($text);
+        if ($text === '' || mb_strlen($text) <= $chunkSize) {
+            return $text === '' ? [] : [$text];
+        }
+
+        if (empty($separators)) {
+            return [$text];
+        }
+
+        $separator = array_shift($separators);
+
+        if ($separator === 'sentence') {
+            return $this->splitBySentences($text, $chunkSize);
+        }
+
+        $pieces = explode($separator, $text);
+
+        if (count($pieces) === 1) {
+            return $this->chunkRecursive($text, $separators, $chunkSize);
+        }
+
+        $chunks = [];
+        $currentPiece = '';
+
+        foreach ($pieces as $i => $piece) {
+            $piece = trim($piece);
+            if ($piece === '') {
+                continue;
+            }
+
+            // Re-attach the separator prefix (e.g. "\n## ") for heading-based splits
+            if ($i > 0 && str_starts_with($separator, "\n#")) {
+                $piece = trim($separator).' '.$piece;
+            }
+
+            if ($currentPiece === '') {
+                $currentPiece = $piece;
+
+                continue;
+            }
+
+            $candidate = $currentPiece."\n\n".$piece;
+
+            if (mb_strlen($candidate) <= $chunkSize) {
+                $currentPiece = $candidate;
+            } else {
+                if (mb_strlen($currentPiece) > $chunkSize) {
+                    $chunks = array_merge($chunks, $this->chunkRecursive($currentPiece, $separators, $chunkSize));
+                } else {
+                    $chunks[] = $currentPiece;
+                }
+                $currentPiece = $piece;
+            }
+        }
+
+        if ($currentPiece !== '') {
+            if (mb_strlen($currentPiece) > $chunkSize) {
+                $chunks = array_merge($chunks, $this->chunkRecursive($currentPiece, $separators, $chunkSize));
+            } else {
+                $chunks[] = $currentPiece;
+            }
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * Split text into sentence-based chunks that fit within chunkSize.
+     *
+     * @return array<int, string>
+     */
+    private function splitBySentences(string $text, int $chunkSize): array
+    {
+        $sentences = preg_split('/(?<=[.!?])\s+/u', $text, -1, PREG_SPLIT_NO_EMPTY);
+
+        if (empty($sentences)) {
+            return [trim($text)];
+        }
+
+        $chunks = [];
+        $currentChunk = '';
+
+        foreach ($sentences as $sentence) {
+            $sentence = trim($sentence);
+            if ($sentence === '') {
+                continue;
+            }
+
+            if ($currentChunk === '') {
+                $currentChunk = $sentence;
+
+                continue;
+            }
+
+            $candidate = $currentChunk.' '.$sentence;
+
+            if (mb_strlen($candidate) <= $chunkSize) {
+                $currentChunk = $candidate;
+            } else {
+                $chunks[] = trim($currentChunk);
+                $currentChunk = $sentence;
+            }
+        }
+
+        if (trim($currentChunk) !== '') {
+            $chunks[] = trim($currentChunk);
+        }
+
+        return $chunks;
+    }
+
+    /**
+     * For markdown content, prepend the nearest heading context to each chunk.
+     *
+     * @param  array<int, string>  $chunks
+     * @return array<int, string>
+     */
+    private function prependHeadingContext(string $fullText, array $chunks): array
+    {
+        $result = [];
+
+        foreach ($chunks as $chunk) {
+            if (preg_match('/^#{1,3}\s/m', $chunk)) {
+                $result[] = $chunk;
+
+                continue;
+            }
+
+            $pos = mb_strpos($fullText, mb_substr($chunk, 0, 100));
+
+            if ($pos === false) {
+                $result[] = $chunk;
+
+                continue;
+            }
+
+            $textBefore = mb_substr($fullText, 0, $pos);
+            $heading = $this->findLastHeading($textBefore);
+
+            if ($heading !== null) {
+                $result[] = $heading."\n\n".$chunk;
+            } else {
+                $result[] = $chunk;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Find the last markdown heading in a block of text.
+     */
+    private function findLastHeading(string $text): ?string
+    {
+        if (preg_match_all('/^(#{1,3}\s.+)$/m', $text, $matches)) {
+            return end($matches[1]);
+        }
+
+        return null;
+    }
+
+    /**
+     * Add overlap between consecutive chunks for context continuity.
+     *
+     * @param  array<int, string>  $chunks
+     * @return array<int, string>
+     */
+    private function addOverlap(array $chunks, int $overlap, int $chunkSize): array
+    {
+        if (count($chunks) <= 1) {
+            return $chunks;
+        }
+
+        $result = [$chunks[0]];
+
+        for ($i = 1; $i < count($chunks); $i++) {
+            $overlapText = $this->buildOverlap($chunks[$i - 1], $overlap);
+            $candidate = $overlapText.' '.$chunks[$i];
+
+            if (mb_strlen($candidate) <= $chunkSize + $overlap) {
+                $result[] = $candidate;
+            } else {
+                $result[] = $chunks[$i];
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Get approximately $targetLength characters from the end of the text, respecting word boundaries.
      */
     private function buildOverlap(string $text, int $targetLength): string
     {
