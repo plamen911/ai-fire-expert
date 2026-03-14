@@ -73,4 +73,131 @@ class AdminUsersTest extends TestCase
 
         $this->assertTrue($admin->fresh()->hasRole('admin'));
     }
+
+    public function test_admin_can_create_user(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        Livewire::actingAs($admin)
+            ->test('pages::admin.users')
+            ->set('name', 'New User')
+            ->set('email', 'newuser@example.com')
+            ->set('position', 'Tester')
+            ->set('password', 'Password123!')
+            ->set('password_confirmation', 'Password123!')
+            ->call('createUser')
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseHas('users', [
+            'name' => 'New User',
+            'email' => 'newuser@example.com',
+            'position' => 'Tester',
+        ]);
+
+        $newUser = User::where('email', 'newuser@example.com')->first();
+        $this->assertTrue($newUser->hasRole('user'));
+    }
+
+    public function test_create_user_validates_required_fields(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        Livewire::actingAs($admin)
+            ->test('pages::admin.users')
+            ->call('createUser')
+            ->assertHasErrors(['name', 'email', 'password']);
+    }
+
+    public function test_create_user_validates_unique_email(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $existing = User::factory()->create(['email' => 'taken@example.com']);
+
+        Livewire::actingAs($admin)
+            ->test('pages::admin.users')
+            ->set('name', 'Another User')
+            ->set('email', 'taken@example.com')
+            ->set('password', 'Password123!')
+            ->set('password_confirmation', 'Password123!')
+            ->call('createUser')
+            ->assertHasErrors(['email']);
+    }
+
+    public function test_non_admin_cannot_create_user(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $component = Livewire::actingAs($admin)
+            ->test('pages::admin.users');
+
+        $this->actingAs($user);
+
+        $component
+            ->set('name', 'Hacker')
+            ->set('email', 'hacker@example.com')
+            ->set('password', 'Password123!')
+            ->set('password_confirmation', 'Password123!')
+            ->call('createUser')
+            ->assertForbidden();
+    }
+
+    public function test_admin_can_delete_user(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        Livewire::actingAs($admin)
+            ->test('pages::admin.users')
+            ->call('deleteUser', $user->id)
+            ->assertHasNoErrors();
+
+        $this->assertDatabaseMissing('users', ['id' => $user->id]);
+    }
+
+    public function test_admin_cannot_delete_self(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        Livewire::actingAs($admin)
+            ->test('pages::admin.users')
+            ->call('deleteUser', $admin->id)
+            ->assertHasErrors(['delete']);
+
+        $this->assertDatabaseHas('users', ['id' => $admin->id]);
+    }
+
+    public function test_non_admin_cannot_delete_user(): void
+    {
+        $user = User::factory()->create();
+        $user->assignRole('user');
+
+        $admin = User::factory()->create();
+        $admin->assignRole('admin');
+
+        $target = User::factory()->create();
+        $target->assignRole('user');
+
+        $component = Livewire::actingAs($admin)
+            ->test('pages::admin.users');
+
+        $this->actingAs($user);
+
+        $component
+            ->call('deleteUser', $target->id)
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('users', ['id' => $target->id]);
+    }
 }
