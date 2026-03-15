@@ -127,9 +127,11 @@ class DocumentProcessor
 
         $fullPath = storage_path('app/private/'.$document->file_path);
 
-        if (str_ends_with($document->file_path, '.md') || str_ends_with($document->file_path, '.txt')) {
+        $fileExtension = strtolower($document->file_path);
+
+        if (str_ends_with($fileExtension, '.md') || str_ends_with($fileExtension, '.txt')) {
             $text = file_get_contents($fullPath);
-        } elseif (str_ends_with($document->file_path, '.pdf')) {
+        } elseif (str_ends_with($fileExtension, '.pdf')) {
             $text = $this->extractTextFromPdf($fullPath);
         } else {
             $text = $this->extractText($fullPath);
