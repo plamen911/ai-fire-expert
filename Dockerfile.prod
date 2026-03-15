@@ -111,4 +111,7 @@ RUN apk add --no-cache nodejs npm \
     && apk del nodejs npm \
     && rm -rf node_modules
 
-CMD ["/bin/sh", "-c", "php artisan optimize:clear && supervisord -c /etc/supervisord.conf"]
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+ENTRYPOINT ["docker-entrypoint.sh"]

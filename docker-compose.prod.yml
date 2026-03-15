@@ -8,6 +8,7 @@ services:
     env_file:
       - .env.production
     volumes:
+      - /home/deploy/laravel_rag:/var/www/html
       - app_storage:/var/www/html/storage
       - app_public:/var/www/html/public
     depends_on:
