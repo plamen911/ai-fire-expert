@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Ai\Agents;
 
+use App\Ai\Tools\CaseChecklist;
 use App\Ai\Tools\ReportTemplate;
+use App\Ai\Tools\TechnicalReference;
 use App\Models\DocumentChunk;
 use App\Services\QueryExpander;
 use Illuminate\Support\Facades\DB;
@@ -88,6 +90,8 @@ class ForensicFireExpert implements Agent, Conversational, HasTools
                 ]);
             }),
             new ReportTemplate,
+            new CaseChecklist,
+            new TechnicalReference,
         ];
     }
 
