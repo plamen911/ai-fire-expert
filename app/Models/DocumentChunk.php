@@ -45,12 +45,12 @@ class DocumentChunk extends Model
     public function scopeKeywordSearch(Builder $query, string $searchQuery): Builder
     {
         if (DB::getDriverName() !== 'pgsql') {
-            return $query->where('content', 'like', '%' . $searchQuery . '%');
+            return $query->where('content', 'like', '%'.$searchQuery.'%');
         }
 
         $tsQuery = collect(preg_split('/\s+/', trim($searchQuery)))
             ->filter(fn (string $word): bool => mb_strlen($word) > 1)
-            ->map(fn (string $word): string => $word . ':*')
+            ->map(fn (string $word): string => $word.':*')
             ->implode(' | ');
 
         if ($tsQuery === '') {

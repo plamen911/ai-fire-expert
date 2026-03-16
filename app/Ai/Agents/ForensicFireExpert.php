@@ -109,19 +109,19 @@ class ForensicFireExpert implements Agent, Conversational, HasTools
             ->where('role', 'user')
             ->orderBy('id')
             ->pluck('content')
-            ->filter(fn ($c) => ! empty(trim($c)));
+            ->filter(fn (string $c) => ! empty(trim($c)));
 
         if ($olderUserMessages->isEmpty()) {
             return '';
         }
 
         $lines = $olderUserMessages
-            ->map(fn ($content) => '- '.Str::limit(trim($content), 500))
+            ->map(fn (string $content) => '- '.Str::limit(trim($content), 500))
             ->implode("\n");
 
         return "## Вече събрана информация от потребителя\n"
-            ."По-долу са отговорите на потребителя от по-ранните етапи на разговора. "
-            ."НЕ задавай отново въпроси, на които вече е отговорено. "
+            .'По-долу са отговорите на потребителя от по-ранните етапи на разговора. '
+            .'НЕ задавай отново въпроси, на които вече е отговорено. '
             ."Използвай тази информация като вече установени факти по случая.\n"
             ."НАПОМНЯНЕ: Бъди КРАТЪК — максимум 2-3 изречения, по 1-2 въпроса наведнъж.\n\n"
             .$lines;
