@@ -2,14 +2,16 @@
 
 An AI assistant for generating forensic fire investigation reports (*Съдебна пожаро-техническа експертиза*) under Bulgarian law. Built with Laravel 12, Livewire 4, and Retrieval-Augmented Generation (RAG).
 
+**Live:** [fire-expert.uk](https://fire-expert.uk)
+
 ## Overview
 
-Administrators populate the knowledge base by uploading reference documents (DOCX, PDF, TXT). The AI agent retrieves relevant context via semantic and keyword search, then reranks the merged results by relevance to select the top matches as context for generating structured forensic reports through a conversational interface. AI inference is offloaded to external APIs (Groq, OpenAI, Cohere), so the server only runs the web stack.
+Administrators populate the knowledge base by uploading reference documents (DOCX, PDF, TXT). The AI agent retrieves relevant context via semantic and keyword search, then reranks the merged results by relevance to select the top matches as context for generating structured forensic reports through a conversational interface. AI inference is offloaded to external APIs (OpenAI, Cohere), so the server only runs the web stack.
 
 ## Key Features
 
-- **Conversational AI chat** — real-time streaming responses powered by Groq (primary) with OpenAI fallback
-- **RAG pipeline** — document ingestion, chunking, vector embeddings (pgvector), similarity search, and result reranking
+- **Conversational AI chat** — real-time streaming responses powered by OpenAI (gpt-5-mini)
+- **RAG pipeline** — document ingestion, chunking, vector embeddings (pgvector), similarity search, and result reranking via Cohere
 - **Report generation** — structured forensic reports with Markdown and PDF export
 - **Self-improving knowledge base** — generated reports are automatically saved back into the knowledge base, allowing the AI to reference its own prior work in future queries
 - **Knowledge base management** — admin upload, deduplication, preview, and deletion of reference documents
@@ -25,7 +27,7 @@ Administrators populate the knowledge base by uploading reference documents (DOC
 | Frontend | Livewire 4, Flux UI, Tailwind CSS 4, Alpine.js |
 | Database | PostgreSQL 17 with pgvector |
 | Cache/Queue | Redis 7 |
-| AI Providers | Groq (qwen3-32b), OpenAI (fallback + embeddings), Cohere (reranking) |
+| AI Providers | OpenAI (gpt-5-mini, embeddings), Cohere (reranking) |
 | AI Framework | laravel/ai |
 | PDF Export | barryvdh/laravel-dompdf |
 | Document Parsing | phpoffice/phpword, smalot/pdfparser |
@@ -34,7 +36,6 @@ Administrators populate the knowledge base by uploading reference documents (DOC
 ## Requirements
 
 - Docker & Docker Compose
-- Groq API key
 - OpenAI API key
 - Cohere API key (for reranking)
 
@@ -45,9 +46,8 @@ Administrators populate the knowledge base by uploading reference documents (DOC
 git clone <repository-url>
 cd laravel_rag
 
-# Copy environment files
+# Copy environment file
 cp .env.example .env
-cp .docker-env.example .docker-env
 
 # Start containers
 docker compose up -d
@@ -64,25 +64,11 @@ npm install && npm run build
 Add your API keys to `.env`:
 
 ```
-GROQ_API_KEY=your-key
 OPENAI_API_KEY=your-key
 COHERE_API_KEY=your-key
 ```
 
 The application is accessible at `http://localhost`.
-
-## Deployment
-
-**Recommended:** DigitalOcean Droplet, Frankfurt (fra1), Ubuntu 24.04 — $6/mo (1 GB RAM, 1 vCPU, 25 GB disk).
-
-PostgreSQL + pgvector, Redis, and PHP-FPM exceed 512 MB even without Docker overhead.
-
-**Production tips:**
-
-- Remove the pgAdmin service from `docker-compose.yml` (or use a separate `docker-compose.prod.yml`) to free ~512 MB RAM
-- Set `APP_ENV=production`, `APP_DEBUG=false`, and run `php artisan config:cache`, `route:cache`, `view:cache`
-- Configure a firewall to expose only ports 80/443
-- Use Let's Encrypt (Certbot) for free HTTPS
 
 ## Docker Services
 
@@ -93,6 +79,25 @@ PostgreSQL + pgvector, Redis, and PHP-FPM exceed 512 MB even without Docker over
 | PostgreSQL + pgvector | `laravel_rag_postgres` | 5432 |
 | Redis | `laravel_rag_redis` | 6379 |
 | pgAdmin | `laravel_rag_pgadmin` | 5050 |
+
+## Deployment
+
+**Recommended:** DigitalOcean Droplet, Frankfurt (fra1), Ubuntu 24.04 — $6/mo (1 GB RAM, 1 vCPU, 25 GB disk).
+
+PostgreSQL + pgvector, Redis, and PHP-FPM exceed 512 MB even without Docker overhead.
+
+Deployment scripts are available in the `deploy/` directory:
+
+- `deploy/setup-server.sh` — initial server provisioning
+- `deploy/deploy.sh` — application deployment
+- `deploy/setup-ssl.sh` — SSL certificate setup via Let's Encrypt
+- `deploy/backup-db.sh` — database backup
+
+**Production tips:**
+
+- Use `docker-compose.prod.yml` instead of the default compose file to exclude pgAdmin and save ~512 MB RAM
+- Set `APP_ENV=production`, `APP_DEBUG=false`, and run `php artisan config:cache`, `route:cache`, `view:cache`
+- Configure a firewall to expose only ports 80/443
 
 ## Testing
 
