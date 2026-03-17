@@ -23,6 +23,7 @@ yarn-error.log
 /.vscode
 /.zed
 .claude
+CLAUDE.md
 myreadme.md
 composer.lock
 .editorconfig
