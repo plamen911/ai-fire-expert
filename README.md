@@ -46,8 +46,9 @@ Administrators populate the knowledge base by uploading reference documents (DOC
 git clone <repository-url>
 cd laravel_rag
 
-# Copy environment file
+# Copy environment files
 cp .env.example .env
+cp .docker-env.example .docker-env
 
 # Start containers
 docker compose up -d
